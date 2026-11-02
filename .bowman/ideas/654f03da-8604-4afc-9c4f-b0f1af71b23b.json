@@ -11,9 +11,9 @@
   ],
   "committedIn": [],
   "status": {
-    "state": "open",
-    "comment": "",
-    "date": 1793609516991
+    "state": "partially",
+    "comment": "/rate: 1–10 buttons + keys 1–9/0, 'aesthetics only' note, API validates 1–10 (verified). Browser check pending.",
+    "date": 1793624094955
   },
   "intrinsicValue": 0,
   "cost": 1,

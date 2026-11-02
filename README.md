@@ -1,4 +1,4 @@
-# art.commons-hub.at
+# paintings.commons-hub.at
 
 Digitalize and sell Felix Fritsch's dad's paintings (~100, located in Austria).
 Ideas and their status: `.bowman/` (Aimparency).
@@ -58,8 +58,8 @@ Regeneration uses the gallery URL + upload key from the capture settings (`captu
 One-time setup:
 
 ```sh
-pnpm wrangler d1 create art-commons-hub          # put the id into wrangler.jsonc env.commons
-pnpm wrangler r2 bucket create art-commons-hub-images
+pnpm wrangler d1 create paintings                # id is in wrangler.jsonc env.commons
+pnpm wrangler r2 bucket create paintings-images  # R2 must be enabled in the dashboard first
 pnpm db:migrate:commons
 pnpm wrangler secret put USERS --env commons     # "name:password[:role],…" role: admin | rater
 ```

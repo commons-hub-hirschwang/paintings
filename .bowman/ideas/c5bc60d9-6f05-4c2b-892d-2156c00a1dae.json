@@ -1,6 +1,6 @@
 {
   "id": "c5bc60d9-6f05-4c2b-892d-2156c00a1dae",
-  "text": "Admin login with manually shared credentials",
+  "text": "Website login (admin/rater) + upload keys for capture laptops",
   "description": "Only admins log in (evaluators = admins). Each admin gets a username/password shared manually — no emails. Credentials kept as Worker secrets/hashed config; per-admin identity so ratings are attributed per person.",
   "archived": false,
   "color": "#273961",
@@ -12,9 +12,9 @@
   ],
   "committedIn": [],
   "status": {
-    "state": "open",
-    "comment": "",
-    "date": 1793609517302
+    "state": "implemented",
+    "comment": "Verified via API 2026-11-02: login sets session cookie; rater gets 401 on /api/admin; capture API 401 without key, OK with key created in admin; bridge settings PUT + connection check works. UI pages type-check; browser check pending (user's Vite dep cache was stuck).",
+    "date": 1793624094589
   },
   "intrinsicValue": 0,
   "cost": 1,

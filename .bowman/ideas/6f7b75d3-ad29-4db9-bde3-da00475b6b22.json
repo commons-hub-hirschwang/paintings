@@ -11,9 +11,9 @@
   ],
   "committedIn": [],
   "status": {
-    "state": "open",
-    "comment": "",
-    "date": 1793609516922
+    "state": "partially",
+    "comment": "/rate: 'Not rated yet' and 'Rated' lists per user. Built; browser check pending.",
+    "date": 1793624094885
   },
   "intrinsicValue": 0,
   "cost": 0.5,

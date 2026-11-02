@@ -18,11 +18,10 @@
 	"env": {
 		// Commons Hub's account: pnpm run deploy:commons
 		"commons": {
-			"name": "art",
-			"routes": [{ "pattern": "art.commons-hub.at", "custom_domain": true }],
-			// TODO: fill database_id after `wrangler d1 create art-commons-hub`
-			"d1_databases": [{ "binding": "DB", "database_name": "art-commons-hub", "database_id": "TODO", "migrations_dir": "migrations" }],
-			"r2_buckets": [{ "binding": "IMAGES", "bucket_name": "art-commons-hub-images" }]
+			"name": "paintings",
+			"routes": [{ "pattern": "paintings.commons-hub.at", "custom_domain": true }],
+			"d1_databases": [{ "binding": "DB", "database_name": "paintings", "database_id": "5e27a199-9745-4b49-ade2-7b42928a855c", "migrations_dir": "migrations" }],
+			"r2_buckets": [{ "binding": "IMAGES", "bucket_name": "paintings-images" }]
 		}
 	}
 }
