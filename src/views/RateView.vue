@@ -17,7 +17,6 @@ const scores = [10, 9, 8, 7, 6, 5, 4, 3, 2, 1]
 
 async function load() {
 	paintings.value = await authed<RatePainting[]>('/api/rate/paintings')
-	currentId.value ??= (unrated.value[0] ?? paintings.value[0])?.id ?? null
 }
 watch(user, (u) => u && load().catch((e) => (error.value = e.message)), { immediate: true })
 
@@ -42,15 +41,14 @@ async function rate(score: number) {
 	}
 }
 
-function select(id: string) {
-	currentId.value = id
-	window.scrollTo({ top: 0 })
-}
+// overlay is open while a painting is selected
+const select = (id: string | null) => (currentId.value = id)
 
-// keys 1–9, 0 = 10
+// keys 1–9, 0 = 10, Esc closes
 function onKey(event: KeyboardEvent) {
 	if (!current.value || event.target instanceof HTMLInputElement) return
-	if (/^[0-9]$/.test(event.key)) rate(event.key === '0' ? 10 : Number(event.key))
+	if (event.key === 'Escape') select(null)
+	else if (/^[0-9]$/.test(event.key)) rate(event.key === '0' ? 10 : Number(event.key))
 }
 onMounted(() => window.addEventListener('keydown', onKey))
 onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
@@ -59,7 +57,19 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 <template>
 	<main id="rate">
 		<LoginGate :roles="['admin', 'rater']">
+			<header>
+				<h1>Rate paintings</h1>
+				<span class="muted">{{ rated.length }} of {{ paintings.length }} rated</span>
+				<button v-if="unrated.length" @click="select(unrated[0]!.id)">Rate {{ unrated.length }} unrated</button>
+			</header>
+			<p v-if="error && !current" class="error">{{ error }}</p>
+			<p v-if="!paintings.length" class="muted">No paintings to rate yet.</p>
+
 			<section v-if="current" class="stage">
+				<button class="close" title="Close (Esc)" @click="select(null)">×</button>
+				<a :href="imageUrl(current, 'detail')" target="_blank">
+					<img :src="imageUrl(current, 'detail')" :alt="current.title" />
+				</a>
 				<aside>
 					<p>
 						Rate the <strong>aesthetics only</strong>: 1 weak – 10 outstanding.
@@ -77,16 +87,11 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 					</p>
 					<p class="muted">
 						{{ rated.length }} of {{ paintings.length }} rated<br />
-						Keys 1–9, 0 = 10. Image opens in full detail.
+						Keys 1–9, 0 = 10, Esc closes. Image opens in full detail.
 					</p>
 					<p v-if="error" class="error">{{ error }}</p>
 				</aside>
-				<a :href="imageUrl(current, 'detail')" target="_blank">
-					<img :src="imageUrl(current, 'detail')" :alt="current.title" />
-				</a>
 			</section>
-			<p v-else-if="error" class="error">{{ error }}</p>
-			<p v-else class="muted">No paintings to rate yet.</p>
 
 			<section v-for="group in [{ title: 'Not rated yet', list: unrated }, { title: 'Rated', list: rated }]" :key="group.title">
 				<h2 v-if="group.list.length">{{ group.title }} ({{ group.list.length }})</h2>
@@ -115,18 +120,40 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 	flex-direction: column;
 	gap: var(--gap);
 
-	/* fills the viewport: fixed sidebar with the buttons, image as large as fits (any aspect ratio) */
+	& header {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: baseline;
+		gap: var(--gap);
+	}
+
+	/* fullscreen overlay: image as large as fits (any aspect ratio) in the left 2/3, buttons starting at 2/3 width */
 	& .stage {
 		display: grid;
-		grid-template-columns: 11rem 1fr;
+		grid-template-columns: 2fr 1fr;
 		gap: var(--gap);
-		height: calc(100dvh - 2 * var(--gap));
+		position: fixed;
+		inset: 0;
+		z-index: 10;
+		padding: var(--gap);
+		background: var(--bg);
+
+		& .close {
+			position: absolute;
+			top: var(--gap);
+			right: var(--gap);
+			font-size: 1.5rem;
+			line-height: 1;
+			border: none;
+		}
 
 		& aside {
 			display: flex;
 			flex-direction: column;
 			gap: var(--gap);
+			justify-content: center;
 			min-height: 0;
+			max-width: 12rem;
 			font-size: 0.9rem;
 
 			& p {
@@ -149,8 +176,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 
 		@media (max-width: 40rem) {
 			grid-template-columns: 1fr;
-			grid-template-rows: auto 60dvh;
-			height: auto;
+			grid-template-rows: 1fr auto;
 		}
 	}
 
