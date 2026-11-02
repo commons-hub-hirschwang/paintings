@@ -26,9 +26,14 @@ export function estimateSizeCm(quad: Quad, calibration: Calibration) {
 	return { widthCm: px.width / calibration.pxPerCm, heightCm: px.height / calibration.pxPerCm }
 }
 
-// output resolution of the rectified image: keeps the photo's pixel count, uses the real aspect ratio
-export function rectifiedSize(quad: Quad, widthCm: number, heightCm: number) {
-	const px = quadPixelSize(quad)
-	const scale = Math.sqrt((px.width * px.height) / (widthCm * heightCm))
-	return { width: Math.round(widthCm * scale), height: Math.round(heightCm * scale) }
+// Output resolution of the rectified image: real aspect ratio, scaled so the longest side (in photo pixels,
+// relative to its real length) keeps full resolution — the densest edge sets px/cm, so no detail is lost.
+export function rectifiedSize([tl, tr, br, bl]: Quad, widthCm: number, heightCm: number) {
+	const pxPerCm = Math.max(
+		distance(tl, tr) / widthCm,
+		distance(bl, br) / widthCm,
+		distance(tl, bl) / heightCm,
+		distance(tr, br) / heightCm,
+	)
+	return { width: Math.round(widthCm * pxPerCm), height: Math.round(heightCm * pxPerCm) }
 }
