@@ -18,6 +18,7 @@ import { listPaintings, nextNumber, paintingFile, savePainting } from './store'
 import { isSynced, syncAll } from './sync'
 import { addGroup, currentProject, listGroups, listProjects, openProject, projectPath } from './project'
 import { warpToRectangle } from './warp'
+import { cameraOf } from './camera'
 
 const run = promisify(execFile)
 const dirs = { get raw() { return projectPath('raw') } }
@@ -84,7 +85,7 @@ app.post('/capture', async (c) => {
 		const jpeg = saved.find((file) => /\.jpe?g$/i.test(file))
 		if (!jpeg)
 			return c.json({ error: saved.length ? 'no JPEG captured — set the camera to JPEG' : 'camera did not take a picture — press Capture again' }, 500)
-		return c.json({ file: basename(jpeg) })
+		return c.json({ file: basename(jpeg), camera: await cameraOf(jpeg) })
 	} catch (error) {
 		return c.json({ error: captureError(error as { killed?: boolean; stderr?: string; message: string }) }, 500)
 	} finally {
@@ -97,7 +98,7 @@ app.post('/upload', async (c) => {
 	await ensureDirs()
 	const file = `${Date.now()}.jpg`
 	await writeFile(join(dirs.raw, file), new Uint8Array(await c.req.arrayBuffer()))
-	return c.json({ file })
+	return c.json({ file, camera: await cameraOf(join(dirs.raw, file)) })
 })
 
 app.get('/raw/:file', async (c) => {
@@ -135,20 +136,21 @@ app.post('/process', async (c) => {
 	await ensureDirs()
 	const body = await c.req.json<{ file: string; quad: Quad; title: string; group: string; widthCm?: number; heightCm?: number }>()
 	if (!listGroups().includes(body.group)) return c.json({ error: `unknown group "${body.group}"` }, 400)
+	const photo = join(dirs.raw, basename(body.file))
+	const camera = await cameraOf(photo)
 	let calibration = await readCalibration()
 	let size: { widthCm: number; heightCm: number }
 	if (body.widthCm && body.heightCm) {
 		// measured painting: (re)calibrates
 		size = { widthCm: body.widthCm, heightCm: body.heightCm }
-		calibration = calibrate(body.quad, size.widthCm, size.heightCm)
+		calibration = calibrate(body.quad, size.widthCm, size.heightCm, camera)
 		await writeFile(calibrationFile(), JSON.stringify(calibration, null, '\t'))
 	} else if (calibration) {
-		size = estimateSizeCm(body.quad, calibration)
+		size = estimateSizeCm(body.quad, calibration, camera)
 	} else {
 		return c.json({ error: 'no calibration — measure this painting' }, 400)
 	}
 
-	const photo = join(dirs.raw, basename(body.file))
 	const { width, height } = rectifiedSize(body.quad, size.widthCm, size.heightCm)
 	const archive = await warpToRectangle(photo, body.quad, width, height)
 	const original = await cropOriginal(photo, body.quad)

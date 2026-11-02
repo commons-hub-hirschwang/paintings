@@ -1,5 +1,5 @@
 // Client for the local capture bridge (pnpm bridge), reached via the Vite dev proxy.
-import type { Calibration, Quad } from '../shared/geometry'
+import type { Calibration, Camera, Quad } from '../shared/geometry'
 
 export type BridgeStatus = {
 	cameras: string[]
@@ -41,8 +41,8 @@ const json = (body: unknown): RequestInit => ({
 
 export const bridge = {
 	status: () => call<BridgeStatus>('/status'),
-	capture: () => call<{ file: string }>('/capture', { method: 'POST' }),
-	upload: (file: File) => call<{ file: string }>('/upload', { method: 'POST', body: file }),
+	capture: () => call<{ file: string; camera: Camera }>('/capture', { method: 'POST' }),
+	upload: (file: File) => call<{ file: string; camera: Camera }>('/upload', { method: 'POST', body: file }),
 	forgetCalibration: () => call('/calibration', { method: 'DELETE' }),
 	saveSettings: (settings: { galleryUrl: string; uploadKey: string }) =>
 		call('/settings', { ...json(settings), method: 'PUT' }),

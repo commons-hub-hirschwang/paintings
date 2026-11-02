@@ -3,7 +3,7 @@
 import { computed, ref, watch } from 'vue'
 import CornerEditor from './CornerEditor.vue'
 import { bridge, type BridgeStatus, type LocalPainting } from './bridge'
-import { estimateSizeCm, type Quad } from '../shared/geometry'
+import { estimateSizeCm, reconstruct, type Camera, type Quad } from '../shared/geometry'
 
 const confirmedKey = () => `capture:calibration-confirmed:${status.value?.project}`
 const newProject = ref('')
@@ -12,6 +12,7 @@ const status = ref<BridgeStatus | null>(null)
 const askReuse = ref(false)
 const photo = ref<string | null>(null)
 const quad = ref<Quad | null>(null)
+const camera = ref<Camera | null>(null)
 let photoSize = { width: 0, height: 0 }
 let lastQuad: { quad: Quad; width: number; height: number } | null = null
 const title = ref('')
@@ -90,19 +91,24 @@ const label = (p: { group: string; number: number }) => `${p.group} #${p.number}
 
 const calibration = computed(() => status.value?.calibration ?? null)
 const measured = computed(() => Number(widthCm.value) > 0 && Number(heightCm.value) > 0)
-const estimate = computed(() => (quad.value && calibration.value ? estimateSizeCm(quad.value, calibration.value) : null))
+const estimate = computed(() =>
+	quad.value && calibration.value && camera.value ? estimateSizeCm(quad.value, calibration.value, camera.value) : null,
+)
+// 3D shape from the corners: tilt of the painting and how far the corner angle is from 90°
+const shape = computed(() => (quad.value && camera.value ? reconstruct(quad.value, camera.value) : null))
 const canSave = computed(() => !!photo.value && !!quad.value && !busy.value && (measured.value || !!calibration.value))
 
-const capture = () => run('Capturing…', async () => setPhoto((await bridge.capture()).file))
+const capture = () => run('Capturing…', async () => setPhoto(await bridge.capture()))
 
 function upload(event: Event) {
 	const file = (event.target as HTMLInputElement).files?.[0]
-	if (file) run('Uploading…', async () => setPhoto((await bridge.upload(file)).file))
+	if (file) run('Uploading…', async () => setPhoto(await bridge.upload(file)))
 }
 
-function setPhoto(file: string) {
+function setPhoto(result: { file: string; camera: Camera }) {
 	quad.value = null
-	photo.value = file
+	camera.value = result.camera
+	photo.value = result.file
 }
 
 // reuse the previous corners when the photo has the same size: paintings sit at the same spot
@@ -160,7 +166,13 @@ const cm = (value: number) => value.toFixed(1)
 			</form>
 			<span v-if="status?.project" class="muted">
 				Camera: {{ status.cameras[0] ?? 'none detected' }} ·
-				{{ calibration ? `calibrated, ${calibration.pxPerCm.toFixed(2)} px/cm` : 'not calibrated' }}
+				{{
+					calibration
+						? calibration.centerDepthCm
+							? `calibrated at ${(calibration.centerDepthCm / 100).toFixed(2)} m`
+							: `calibrated, ${calibration.pxPerCm.toFixed(2)} px/cm`
+						: 'not calibrated'
+				}}
 			</span>
 			<button @click="refreshStatus">Refresh</button>
 		</header>
@@ -216,6 +228,11 @@ const cm = (value: number) => value.toFixed(1)
 						Size: {{ cm(estimate.widthCm) }} × {{ cm(estimate.heightCm) }} cm
 						<span class="muted">(from calibration; entering a measured size recalibrates)</span>
 					</p>
+					<p v-if="shape" :class="{ warning: shape.angleErrorDeg > 1.5 }">
+						Tilted {{ shape.tiltDeg.toFixed(1) }}° · corners {{ shape.angleErrorDeg.toFixed(1) }}° off square
+						<span v-if="shape.angleErrorDeg > 1.5">— check the corners</span>
+					</p>
+					<p v-else-if="camera && !camera.focalPx" class="muted">No focal length in this photo: size ignores tilt.</p>
 					<div class="size">
 						<label>
 							Width (cm)

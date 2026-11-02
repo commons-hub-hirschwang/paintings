@@ -13,7 +13,7 @@
   "committedIn": [],
   "status": {
     "state": "implemented",
-    "comment": "Verified in browser: first painting requires cm (60x40 → 20 px/cm), next shows live estimate 40.0x40.0 cm (exact), new session asks 'Same distance… (reuse calibration)'. Real-camera accuracy still to check with a measured painting.",
+    "comment": "Now true 3D: focal length from EXIF (a6400: focal mm × width / 23.5 mm; else 35 mm equivalent), rectangle reconstructed via P0+P2=P1+P3, scale so the painting center sits at the calibrated depth. Synthetic tests: exact for tilts up to 25°; with ±3 px click noise 0.1–0.7 % median error vs 0.3–2.8 % before. Capture UI shows tilt and corner-angle error.",
     "date": 1793621698813
   },
   "intrinsicValue": 0,

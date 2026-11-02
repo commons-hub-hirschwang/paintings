@@ -18,6 +18,7 @@
     "capture": "tsx watch --clear-screen=false bridge/server.ts"
   },
   "dependencies": {
+    "exif-reader": "^2.0.3",
     "hono": "^4.13.16",
     "vue": "^3.5.42",
     "vue-router": "^5.3.1"
