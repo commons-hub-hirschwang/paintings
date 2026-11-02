@@ -10,7 +10,7 @@
     "build-only": "vite build",
     "type-check": "vue-tsc --build",
     "cf-typegen": "wrangler types",
-    "deploy:commons": "pnpm build && wrangler deploy --env commons",
+    "deploy:commons": "CLOUDFLARE_ENV=commons pnpm build && wrangler deploy",
     "bridge": "tsx watch bridge/server.ts",
     "images:regen": "tsx scripts/regen-variants.ts",
     "db:migrate": "wrangler d1 migrations apply DB --local",
