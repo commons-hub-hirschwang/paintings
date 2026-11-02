@@ -6,6 +6,7 @@ import { currentUser, login, logout, type Env } from './auth'
 import admin from './routes/admin'
 import capture from './routes/capture'
 import rate from './routes/rate'
+import shop from './routes/shop'
 
 const app = new Hono<Env>()
 
@@ -68,5 +69,6 @@ app.get('/api/auth/me', async (c) => c.json(await currentUser(c)))
 app.route('/api/admin', admin)
 app.route('/api/rate', rate)
 app.route('/api/capture', capture)
+app.route('/api', shop)
 
 export default app

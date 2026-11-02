@@ -5,6 +5,21 @@ import { fetchPainting, formatPrice, imageUrl, type PublicPainting } from '@/api
 
 const route = useRoute()
 const painting = ref<PublicPainting | null | undefined>(undefined)
+const bought = route.query.bought === '1'
+const error = ref('')
+const buying = ref(false)
+
+async function buy() {
+	buying.value = true
+	error.value = ''
+	const response = await fetch(`/api/checkout/${painting.value!.id}`, { method: 'POST' })
+	const body = await response.json()
+	if (response.ok) location.href = body.url
+	else {
+		error.value = body.error
+		buying.value = false
+	}
+}
 fetchPainting(String(route.params.id)).then((p) => (painting.value = p))
 </script>
 
@@ -19,10 +34,14 @@ fetchPainting(String(route.params.id)).then((p) => (painting.value = p))
 			<aside>
 				<h1>{{ painting.title || 'Untitled' }}</h1>
 				<p class="muted">{{ painting.width_cm }} × {{ painting.height_cm }} cm</p>
-				<p v-if="painting.status === 'available'">
-					<strong>{{ formatPrice(painting.price) }}</strong>
-				</p>
-				<p v-else class="muted">{{ painting.status }}</p>
+				<p v-if="bought">Thank you for your purchase! We will contact you about pick-up or shipping.</p>
+				<template v-else-if="painting.status === 'available' && painting.price">
+					<p><strong>{{ formatPrice(painting.price) }}</strong></p>
+					<button :disabled="buying" @click="buy">Buy</button>
+					<p class="muted">Pick-up in Austria (free) or shipping, chosen at checkout.</p>
+				</template>
+				<p v-else class="muted">{{ painting.status === 'available' ? formatPrice(null) : painting.status }}</p>
+				<p v-if="error" class="error">{{ error }}</p>
 			</aside>
 		</template>
 	</main>
