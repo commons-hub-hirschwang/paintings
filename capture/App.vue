@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // Local capture tool (pnpm capture): project → capture → corners → title/size → save offline → sync.
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import CornerEditor from './CornerEditor.vue'
 import { bridge, type BridgeStatus, type LocalPainting } from './bridge'
 import { estimateSizeCm, type Quad } from '../shared/geometry'
@@ -20,22 +20,22 @@ const heightCm = ref<number | ''>('')
 const busy = ref('')
 const error = ref('')
 const notice = ref('')
-const showSettings = ref(false)
 const settings = ref({ galleryUrl: '', uploadKey: '' })
-
-function openSettings() {
-	settings.value = { galleryUrl: status.value?.galleryUrl ?? '', uploadKey: '' }
-	showSettings.value = !showSettings.value
-}
 
 const saveSettings = () =>
 	run('Saving settings…', async () => {
 		await bridge.saveSettings(settings.value)
 		status.value = await bridge.status()
 		paintings.value = await bridge.paintings()
-		showSettings.value = false
+		settings.value.uploadKey = ''
 	})
 const paintings = ref<LocalPainting[]>([])
+
+// settings form shows the current project's sync target
+watch(
+	() => [status.value?.project, status.value?.galleryUrl],
+	() => (settings.value.galleryUrl = status.value?.galleryUrl ?? ''),
+)
 
 async function run(label: string, task: () => Promise<void>) {
 	busy.value = label
@@ -175,6 +175,8 @@ const cm = (value: number) => value.toFixed(1)
 				<CornerEditor v-model="quad" :src="bridge.rawUrl(photo)" @loaded="onPhotoLoaded" />
 
 				<form @submit.prevent="canSave && save()">
+					<fieldset>
+					<legend>Painting</legend>
 					<p class="muted">Press anywhere and move: the nearest corner follows (Shift = slow). Keys 1–4 select a corner, arrows nudge it.</p>
 					<label>
 						Title
@@ -202,11 +204,12 @@ const cm = (value: number) => value.toFixed(1)
 						<button type="submit" :disabled="!canSave">Save painting</button>
 						<button type="button" :disabled="!!busy" @click="photo = null">Discard photo</button>
 					</div>
+					</fieldset>
 				</form>
 			</section>
 
-			<section v-if="paintings.length" class="saved">
-				<h2>Captured ({{ paintings.length }})</h2>
+			<fieldset v-if="paintings.length" class="saved">
+				<legend>Captured ({{ paintings.length }})</legend>
 				<figure v-for="painting in paintings" :key="painting.id">
 					<img :src="bridge.thumbUrl(painting.id)" :alt="painting.title" />
 					<figcaption>
@@ -216,34 +219,35 @@ const cm = (value: number) => value.toFixed(1)
 						</span>
 					</figcaption>
 				</figure>
-			</section>
+			</fieldset>
 
 			<!-- sync to the website: below the captured paintings -->
-			<section class="sync">
-				<h2>Sync</h2>
-				<p class="muted">
+			<fieldset class="sync">
+				<legend>Sync</legend>
+				<p>
 					{{ status.unsynced }} not synced to {{ status.galleryUrl }}
-					<span :class="status.connection.ok ? '' : 'error'">
+					<span :class="status.connection.ok ? 'muted' : 'error'">
 						({{ status.connection.ok ? `key "${status.connection.key}"` : status.hasUploadKey ? 'not reachable / key invalid' : 'no upload key' }})
 					</span>
 				</p>
-				<div class="actions">
-					<button :disabled="!!busy || !status.unsynced" @click="sync">Sync {{ status.unsynced || '' }}</button>
-					<button @click="openSettings">Settings</button>
-				</div>
-			<form v-if="showSettings" class="dialog" @submit.prevent="saveSettings">
-			<label>
-				Gallery URL
-				<input v-model="settings.galleryUrl" placeholder="https://paintings.commons-hub.at" required />
-			</label>
-			<label>
-				Upload key (create one under Admin → Upload keys)
-				<input v-model="settings.uploadKey" type="password" :placeholder="status?.hasUploadKey ? 'unchanged' : 'ach_…'" />
-			</label>
-			<button type="submit">Save</button>
-			<p v-if="status && !status.connection.ok" class="muted">{{ status.connection.error }}</p>
-		</form>
-			</section>
+				<button :disabled="!!busy || !status.unsynced" @click="sync">Sync {{ status.unsynced || '' }}</button>
+				<form @submit.prevent="saveSettings">
+					<label>
+						Gallery URL
+						<input v-model="settings.galleryUrl" placeholder="https://paintings.commons-hub.at" required />
+					</label>
+					<label>
+						Upload key
+						<input
+							v-model="settings.uploadKey"
+							type="password"
+							:placeholder="status.hasUploadKey ? 'saved — enter to replace' : 'from the website: /admin → Upload keys'"
+						/>
+					</label>
+					<button type="submit">Save settings</button>
+				</form>
+				<p v-if="!status.connection.ok" class="muted">{{ status.connection.error }}</p>
+			</fieldset>
 		</template>
 	</main>
 </template>
@@ -281,19 +285,28 @@ const cm = (value: number) => value.toFixed(1)
 	}
 
 	& .sync {
-		display: flex;
-		flex-direction: column;
-		gap: var(--gap);
+		align-items: flex-start;
+
+		& p {
+			margin: 0;
+		}
+
+		& form {
+			display: flex;
+			flex-wrap: wrap;
+			align-items: flex-end;
+			gap: var(--gap);
+
+			& label {
+				flex: 1 1 16rem;
+			}
+		}
 	}
 
 	& .saved {
 		display: grid;
 		grid-template-columns: repeat(auto-fill, minmax(8rem, 1fr));
 		gap: var(--gap);
-
-		& h2 {
-			grid-column: 1 / -1;
-		}
 
 		& figure {
 			margin: 0;
