@@ -171,7 +171,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 			width: 100%;
 			height: 100%;
 			object-fit: contain;
-			object-position: center top;
+			object-position: center;
 		}
 
 		@media (max-width: 40rem) {
