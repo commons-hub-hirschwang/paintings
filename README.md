@@ -61,7 +61,7 @@ One-time setup:
 pnpm wrangler d1 create paintings                # id is in wrangler.jsonc env.commons
 pnpm wrangler r2 bucket create paintings-images  # R2 must be enabled in the dashboard first
 pnpm db:migrate:commons
-pnpm wrangler secret put USERS --env commons     # "name:password[:role],…" role: admin | rater
+pnpm wrangler secret put USERS --env commons     # "name:password[:admin],…" (others: rater)
 ```
 
 Then `pnpm deploy:commons`.

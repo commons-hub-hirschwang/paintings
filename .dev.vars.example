@@ -1,3 +1,3 @@
-# copy to .dev.vars — users as name:password[:role] (role: admin | rater, default admin)
+# copy to .dev.vars — users as name:password[:admin] (without :admin = rater)
 # production: wrangler secret put USERS --env commons
-USERS=felix:change-me,guest:change-me:rater
+USERS=felix:change-me:admin,guest:change-me

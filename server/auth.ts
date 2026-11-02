@@ -1,4 +1,4 @@
-// Users come from the USERS secret: "name:password[:role],…" (role: admin | rater, default admin).
+// Users come from the USERS secret: "name:password[:admin],…" — only entries marked :admin are admins, all others raters.
 // Website login sets a signed session cookie; capture laptops use upload keys (Bearer) instead.
 import type { Context } from 'hono'
 import { deleteCookie, getSignedCookie, setSignedCookie } from 'hono/cookie'
@@ -19,7 +19,7 @@ function users(env: Bindings) {
 	const map = new Map<string, { password: string; role: Role }>()
 	for (const entry of (env.USERS ?? '').split(',')) {
 		const [name, password, role] = entry.trim().split(':')
-		if (name && password) map.set(name, { password, role: role === 'rater' ? 'rater' : 'admin' })
+		if (name && password) map.set(name, { password, role: role === 'admin' ? 'admin' : 'rater' })
 	}
 	return map
 }

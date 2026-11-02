@@ -12,9 +12,9 @@
   ],
   "committedIn": [],
   "status": {
-    "state": "open",
-    "comment": "",
-    "date": 1793630345116
+    "state": "implemented",
+    "comment": "captures/projects/<name>/ with per-project raw, paintings, calibration, settings; old captures migrated to 'test'; create/switch verified headless.",
+    "date": 1793630800188
   },
   "intrinsicValue": 0,
   "cost": 2,

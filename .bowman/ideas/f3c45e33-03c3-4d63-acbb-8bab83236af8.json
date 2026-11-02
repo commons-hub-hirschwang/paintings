@@ -11,9 +11,9 @@
   ],
   "committedIn": [],
   "status": {
-    "state": "open",
-    "comment": "",
-    "date": 1793630344927
+    "state": "implemented",
+    "comment": "pnpm capture serves UI + /bridge API on :5174 (Vite middleware); /capture removed from website. Verified headless 2026-11-02.",
+    "date": 1793630799873
   },
   "intrinsicValue": 0,
   "cost": 2,
