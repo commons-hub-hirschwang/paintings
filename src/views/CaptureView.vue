@@ -18,11 +18,13 @@ const widthCm = ref<number | ''>('')
 const heightCm = ref<number | ''>('')
 const busy = ref('')
 const error = ref('')
+const notice = ref('')
 const paintings = ref<LocalPainting[]>([])
 
 async function run(label: string, task: () => Promise<void>) {
 	busy.value = label
 	error.value = ''
+	notice.value = ''
 	try {
 		await task()
 	} catch (e) {
@@ -94,7 +96,8 @@ const save = () =>
 
 const sync = () =>
 	run(`Syncing to ${status.value?.galleryUrl}…`, async () => {
-		const { failed } = await bridge.sync()
+		const { synced, failed } = await bridge.sync()
+		notice.value = `${synced} synced to ${status.value?.galleryUrl} (as drafts, not public yet)`
 		status.value = await bridge.status()
 		paintings.value = await bridge.paintings()
 		if (failed.length) error.value = `${failed.length} failed: ${failed[0]!.error}`
@@ -117,6 +120,7 @@ const cm = (value: number) => value.toFixed(1)
 
 		<p v-if="error" class="error">{{ error }}</p>
 		<p v-if="busy" class="muted">{{ busy }}</p>
+		<p v-if="notice">{{ notice }}</p>
 
 		<section v-if="askReuse" class="dialog">
 			<p>Same distance from camera to painting as before? (reuse calibration)</p>
