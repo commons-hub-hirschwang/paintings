@@ -1,15 +1,17 @@
 // Capture API client for the bridge and scripts. Settings (gallery URL + upload key) are edited in the capture
 // UI and stored in captures/settings.json; GALLERY_URL / UPLOAD_KEY in .env.local are the fallback.
 import { existsSync, readFileSync } from 'node:fs'
-import { mkdir, writeFile } from 'node:fs/promises'
+import { writeFile } from 'node:fs/promises'
+import { projectPath } from './project'
 
 if (existsSync('.env.local')) process.loadEnvFile('.env.local')
 
 export type Settings = { galleryUrl: string; uploadKey: string }
-const settingsFile = 'captures/settings.json'
+// per project: each project can sync to its own gallery
+const settingsFile = () => projectPath('settings.json')
 
 export function getSettings(): Settings {
-	const stored: Partial<Settings> = existsSync(settingsFile) ? JSON.parse(readFileSync(settingsFile, 'utf8')) : {}
+	const stored: Partial<Settings> = existsSync(settingsFile()) ? JSON.parse(readFileSync(settingsFile(), 'utf8')) : {}
 	return {
 		galleryUrl: (stored.galleryUrl ?? process.env.GALLERY_URL ?? 'http://localhost:5173').replace(/\/+$/, ''),
 		uploadKey: stored.uploadKey ?? process.env.UPLOAD_KEY ?? '',
@@ -17,8 +19,7 @@ export function getSettings(): Settings {
 }
 
 export async function saveSettings(settings: Partial<Settings>) {
-	await mkdir('captures', { recursive: true })
-	await writeFile(settingsFile, JSON.stringify({ ...getSettings(), ...settings }, null, '\t'))
+	await writeFile(settingsFile(), JSON.stringify({ ...getSettings(), ...settings }, null, '\t'))
 }
 
 export async function api(path: string, init: RequestInit = {}) {

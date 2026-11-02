@@ -3,6 +3,7 @@
 import { existsSync } from 'node:fs'
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { projectPath } from './project'
 
 export type LocalPainting = {
 	id: string
@@ -13,11 +14,11 @@ export type LocalPainting = {
 	synced: string[]
 }
 
-const root = 'captures/paintings'
-export const paintingFile = (id: string, name: 'painting.json' | 'archive.jpg' | 'thumb.jpg') => join(root, id, name)
+const root = () => projectPath('paintings')
+export const paintingFile = (id: string, name: 'painting.json' | 'archive.jpg' | 'thumb.jpg') => join(root(), id, name)
 
 export async function savePainting(painting: LocalPainting, archive: Buffer, thumb: Buffer) {
-	await mkdir(join(root, painting.id), { recursive: true })
+	await mkdir(join(root(), painting.id), { recursive: true })
 	await writeFile(paintingFile(painting.id, 'archive.jpg'), archive)
 	await writeFile(paintingFile(painting.id, 'thumb.jpg'), thumb)
 	await writePainting(painting)
@@ -27,8 +28,8 @@ export const writePainting = (painting: LocalPainting) =>
 	writeFile(paintingFile(painting.id, 'painting.json'), JSON.stringify(painting, null, '\t'))
 
 export async function listPaintings(): Promise<LocalPainting[]> {
-	if (!existsSync(root)) return []
-	const ids = await readdir(root)
+	if (!existsSync(root())) return []
+	const ids = await readdir(root())
 	const paintings = await Promise.all(
 		ids
 			.filter((id) => existsSync(paintingFile(id, 'painting.json')))

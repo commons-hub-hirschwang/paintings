@@ -3,6 +3,9 @@ import type { Calibration, Quad } from '../shared/geometry'
 
 export type BridgeStatus = {
 	cameras: string[]
+	project: string | null
+	projects: string[]
+	// below: only when a project is open
 	calibration: Calibration | null
 	galleryUrl: string
 	hasUploadKey: boolean
@@ -33,6 +36,7 @@ export const bridge = {
 	forgetCalibration: () => call('/calibration', { method: 'DELETE' }),
 	saveSettings: (settings: { galleryUrl: string; uploadKey: string }) =>
 		call('/settings', { ...json(settings), method: 'PUT' }),
+	openProject: (name: string, create = false) => call<{ project: string }>('/projects', json({ name, create })),
 	process: (body: { file: string; quad: Quad; title: string; widthCm?: number; heightCm?: number }) =>
 		call<LocalPainting>('/process', json(body)),
 	paintings: () => call<LocalPainting[]>('/paintings'),

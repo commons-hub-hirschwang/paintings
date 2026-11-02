@@ -20,10 +20,10 @@ cp .dev.vars.example .dev.vars   # website users (name:password[:role]) for the 
 cp .env.example .env.local       # bridge/scripts fallback (normally set in the capture UI)
 pnpm db:migrate                  # local D1
 pnpm dev                         # app + Worker on :5173
-pnpm bridge                      # capture bridge on :5174 (proxied at /bridge)
 ```
 
-Capture screen: http://localhost:5173/capture (dev builds only, never deployed).
+Capture tool (separate from the website): `pnpm capture` → http://localhost:5174.
+Projects live in `captures/projects/<name>/` (photos, paintings, calibration, sync target + upload key).
 
 ## Capture
 
@@ -37,7 +37,7 @@ grabbed it: `pkill -f gvfs-gphoto2-volume-monitor`.
 3. Calibration: the first painting of a session asks for measured width/height in cm.
    Later sessions ask "Same distance from camera to painting as before? (reuse calibration)".
    Calibration lives in `captures/calibration.json`.
-4. Paintings are stored offline in `captures/paintings/<id>/` (archive, thumb, metadata).
+4. Paintings are stored offline in `captures/projects/<name>/paintings/<id>/` (archive, thumb, metadata).
    Upload them with the **Sync** button or `pnpm sync` (to `GALLERY_URL` in `.env.local`; safe to rerun).
 
 ## Images

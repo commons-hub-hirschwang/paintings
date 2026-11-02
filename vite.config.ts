@@ -14,8 +14,4 @@ export default defineConfig({
 			'@': fileURLToPath(new URL('./src', import.meta.url)),
 		},
 	},
-	server: {
-		// local capture bridge (pnpm bridge)
-		proxy: { '/bridge': { target: 'http://localhost:5174', rewrite: (path) => path.replace(/^\/bridge/, '') } },
-	},
 })

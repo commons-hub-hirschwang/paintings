@@ -2,7 +2,7 @@
 // Set the 4 painting corners: press anywhere and the nearest corner moves with the mouse (cursor hidden,
 // magnifier shown, Shift = 1/10 speed). Arrow keys nudge the selected corner by 1 px (Shift: 10 px), keys 1–4 select.
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import type { Point, Quad } from '../../shared/geometry'
+import type { Point, Quad } from '../shared/geometry'
 
 const props = defineProps<{ src: string }>()
 const quad = defineModel<Quad | null>({ required: true }) // null until the parent sets corners on `loaded`

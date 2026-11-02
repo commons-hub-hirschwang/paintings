@@ -1,11 +1,12 @@
 <script setup lang="ts">
-// Local-only capture session (registered in dev builds only): capture → corners → title/size → save.
+// Local capture tool (pnpm capture): project → capture → corners → title/size → save offline → sync.
 import { computed, ref } from 'vue'
-import CornerEditor from '@/components/CornerEditor.vue'
-import { bridge, type BridgeStatus, type LocalPainting } from '@/bridge'
-import { estimateSizeCm, type Quad } from '../../shared/geometry'
+import CornerEditor from './CornerEditor.vue'
+import { bridge, type BridgeStatus, type LocalPainting } from './bridge'
+import { estimateSizeCm, type Quad } from '../shared/geometry'
 
-const CONFIRMED = 'capture:calibration-confirmed'
+const confirmedKey = () => `capture:calibration-confirmed:${status.value?.project}`
+const newProject = ref('')
 
 const status = ref<BridgeStatus | null>(null)
 const askReuse = ref(false)
@@ -52,16 +53,25 @@ async function run(label: string, task: () => Promise<void>) {
 const refreshStatus = () =>
 	run('Connecting to bridge…', async () => {
 		status.value = await bridge.status()
-		paintings.value = await bridge.paintings()
-		askReuse.value = !!status.value.calibration && sessionStorage.getItem(CONFIRMED) !== 'yes'
+		paintings.value = status.value.project ? await bridge.paintings() : []
+		askReuse.value = !!status.value.calibration && sessionStorage.getItem(confirmedKey()) !== 'yes'
 	})
 refreshStatus()
 
 async function answerReuse(reuse: boolean) {
 	if (!reuse) await run('Resetting calibration…', () => bridge.forgetCalibration().then(refreshStatus))
-	sessionStorage.setItem(CONFIRMED, 'yes')
+	sessionStorage.setItem(confirmedKey(), 'yes')
 	askReuse.value = false
 }
+
+const openProject = (name: string, create = false) =>
+	run('Opening project…', async () => {
+		await bridge.openProject(name, create)
+		photo.value = null
+		lastQuad = null
+		newProject.value = ''
+		await refreshStatus()
+	})
 
 const calibration = computed(() => status.value?.calibration ?? null)
 const measured = computed(() => Number(widthCm.value) > 0 && Number(heightCm.value) > 0)
@@ -100,7 +110,7 @@ const save = () =>
 			...(measured.value ? { widthCm: Number(widthCm.value), heightCm: Number(heightCm.value) } : {}),
 		})
 		lastQuad = { quad: quad.value!, ...photoSize }
-		if (measured.value) sessionStorage.setItem(CONFIRMED, 'yes')
+		if (measured.value) sessionStorage.setItem(confirmedKey(), 'yes')
 		status.value = await bridge.status()
 		paintings.value = await bridge.paintings()
 		photo.value = null
@@ -124,7 +134,15 @@ const cm = (value: number) => value.toFixed(1)
 	<main id="capture">
 		<header>
 			<h1>Capture</h1>
-			<span v-if="status" class="muted">
+			<select v-if="status?.projects.length" :value="status.project ?? ''" @change="openProject(($event.target as HTMLSelectElement).value)">
+				<option v-if="!status.project" value="" disabled>Open project…</option>
+				<option v-for="project in status.projects" :key="project">{{ project }}</option>
+			</select>
+			<form class="actions" @submit.prevent="openProject(newProject, true)">
+				<input v-model="newProject" placeholder="New project, e.g. attic" required />
+				<button type="submit">Create</button>
+			</form>
+			<span v-if="status?.project" class="muted">
 				Camera: {{ status.cameras[0] ?? 'none detected' }} ·
 				{{ calibration ? `calibrated, ${calibration.pxPerCm.toFixed(2)} px/cm` : 'not calibrated' }} ·
 				{{ status.unsynced }} not synced to {{ status.galleryUrl }}
@@ -132,9 +150,9 @@ const cm = (value: number) => value.toFixed(1)
 					({{ status.connection.ok ? `key "${status.connection.key}"` : status.hasUploadKey ? 'not reachable / key invalid' : 'no upload key' }})
 				</span>
 			</span>
-			<button @click="openSettings">Settings</button>
+			<button v-if="status?.project" @click="openSettings">Settings</button>
 			<button @click="refreshStatus">Refresh</button>
-			<button v-if="status" :disabled="!!busy || !status.unsynced" @click="sync">Sync {{ status.unsynced || '' }}</button>
+			<button v-if="status?.project" :disabled="!!busy || !status.unsynced" @click="sync">Sync {{ status.unsynced || '' }}</button>
 		</header>
 
 		<form v-if="showSettings" class="dialog" @submit.prevent="saveSettings">
@@ -159,6 +177,8 @@ const cm = (value: number) => value.toFixed(1)
 			<button @click="answerReuse(true)">Yes, reuse</button>
 			<button @click="answerReuse(false)">No, measure again</button>
 		</section>
+
+		<p v-else-if="status && !status.project" class="muted">Create or open a project to start.</p>
 
 		<template v-else-if="status">
 			<section v-if="!photo" class="actions">

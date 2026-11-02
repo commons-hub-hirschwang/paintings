@@ -1,11 +1,14 @@
-// Local capture bridge: runs on the laptop the camera is plugged into (pnpm bridge).
-// The capture UI reaches it via the Vite proxy at /bridge.
+// Local capture tool (pnpm capture): serves the capture UI (capture/, via Vite) and its API under /bridge
+// on http://localhost:5174. Runs on the laptop the camera is plugged into; works offline, syncs later.
 import { execFile } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import { promisify } from 'node:util'
-import { serve } from '@hono/node-server'
+import { createServer } from 'node:http'
+import { getRequestListener } from '@hono/node-server'
+import vue from '@vitejs/plugin-vue'
+import { createServer as createViteServer } from 'vite'
 import { Hono } from 'hono'
 import { calibrate, estimateSizeCm, rectifiedSize, type Calibration, type Quad } from '../shared/geometry'
 import sharp from 'sharp'
@@ -13,16 +16,17 @@ import { webVariants } from '../shared/image-variants'
 import { checkConnection, getSettings, saveSettings } from './api'
 import { listPaintings, paintingFile, savePainting } from './store'
 import { isSynced, syncAll } from './sync'
+import { currentProject, listProjects, openProject, projectPath } from './project'
 import { warpToRectangle } from './warp'
 
 const run = promisify(execFile)
-const dirs = { raw: 'captures/raw' }
-const calibrationFile = 'captures/calibration.json'
+const dirs = { get raw() { return projectPath('raw') } }
+const calibrationFile = () => projectPath('calibration.json')
 // created before every write, so deleting captures/ while the bridge runs is harmless
-const ensureDirs = () => Promise.all(Object.values(dirs).map((dir) => mkdir(dir, { recursive: true })))
+const ensureDirs = () => mkdir(dirs.raw, { recursive: true })
 
 const readCalibration = async (): Promise<Calibration | null> =>
-	existsSync(calibrationFile) ? JSON.parse(await readFile(calibrationFile, 'utf8')) : null
+	existsSync(calibrationFile()) ? JSON.parse(await readFile(calibrationFile(), 'utf8')) : null
 
 const app = new Hono()
 app.onError((error, c) => {
@@ -34,10 +38,14 @@ app.get('/status', async (c) => {
 	const { stdout } = await run('gphoto2', ['--auto-detect']).catch(() => ({ stdout: '' }))
 	// output: header, dashes, then "Model   Port" lines
 	const cameras = stdout.split('\n').slice(2).map((line) => line.trim()).filter(Boolean)
+	const project = currentProject()
+	if (!project) return c.json({ cameras, project, projects: listProjects() })
 	const unsynced = (await listPaintings()).filter((p) => !isSynced(p)).length
 	const { galleryUrl, uploadKey } = getSettings()
 	return c.json({
 		cameras,
+		project,
+		projects: listProjects(),
 		calibration: await readCalibration(),
 		galleryUrl,
 		hasUploadKey: !!uploadKey,
@@ -76,7 +84,7 @@ app.get('/raw/:file', async (c) => {
 
 // "same distance from camera to painting as before?" — no → forget calibration
 app.delete('/calibration', async (c) => {
-	await rm(calibrationFile, { force: true })
+	await rm(calibrationFile(), { force: true })
 	return c.json({ ok: true })
 })
 
@@ -90,7 +98,7 @@ app.post('/process', async (c) => {
 		// measured painting: (re)calibrates
 		size = { widthCm: body.widthCm, heightCm: body.heightCm }
 		calibration = calibrate(body.quad, size.widthCm, size.heightCm)
-		await writeFile(calibrationFile, JSON.stringify(calibration, null, '\t'))
+		await writeFile(calibrationFile(), JSON.stringify(calibration, null, '\t'))
 	} else if (calibration) {
 		size = estimateSizeCm(body.quad, calibration)
 	} else {
@@ -135,6 +143,20 @@ app.put('/settings', async (c) => {
 // upload everything the configured gallery doesn't have yet
 app.post('/sync', async (c) => c.json(await syncAll(console.log)))
 
+// open an existing project or create a new one (e.g. "test", "attic", a client's collection)
+app.post('/projects', async (c) => {
+	const { name, create } = await c.req.json<{ name: string; create?: boolean }>()
+	return c.json({ project: openProject(name, create) })
+})
+
 const port = 5174
-serve({ fetch: app.fetch, port })
-console.log(`bridge on http://localhost:${port}, syncs to ${getSettings().galleryUrl}`)
+const api = getRequestListener(new Hono().route('/bridge', app).fetch)
+const vite = await createViteServer({
+	configFile: false,
+	root: 'capture',
+	plugins: [vue()],
+	server: { middlewareMode: true },
+	appType: 'spa',
+})
+createServer((req, res) => (req.url?.startsWith('/bridge/') ? api(req, res) : vite.middlewares(req, res))).listen(port)
+console.log(`capture tool on http://localhost:${port} (project: ${currentProject() ?? 'none'})`)
