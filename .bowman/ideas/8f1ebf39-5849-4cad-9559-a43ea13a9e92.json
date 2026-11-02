@@ -1,0 +1,24 @@
+{
+  "id": "8f1ebf39-5849-4cad-9559-a43ea13a9e92",
+  "text": "Painting names: one name per painting, editable by authors and admins",
+  "description": "New role \"author\" (USERS entry name:password:author) = rate + name permissions; admins can name too. One name per painting (no suggestion voting). Set during capture (title field, exists) or edited in the rating overlay by authors/admins. Empty → \"Untitled\". Caveat: capture sync must not overwrite a name edited online (sync currently re-posts title on upsert — only set title on insert).",
+  "archived": false,
+  "color": "#37612b",
+  "tags": [],
+  "supportingConnections": [],
+  "supportedIdeas": [
+    "f8aaafd1-4210-4462-996a-c8153536583c"
+  ],
+  "committedIn": [],
+  "status": {
+    "state": "open",
+    "comment": "",
+    "date": 1793639168658
+  },
+  "intrinsicValue": 0,
+  "cost": 1,
+  "selfWeight": 1,
+  "duration": 1,
+  "costVariance": 0,
+  "valueVariance": 0
+}

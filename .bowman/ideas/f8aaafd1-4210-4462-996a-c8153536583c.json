@@ -49,6 +49,15 @@
       "weight": 1,
       "hypothesis": "Size-appropriate, compressed variants keep the grid and painting pages fast while the archive keeps full quality",
       "reflection": "Held in local test: thumb ~2.8 KB vs. ~24 KB archive for a 1200x800 synthetic image; real page-speed effect untested until real paintings exist."
+    },
+    {
+      "ideaId": "8f1ebf39-5849-4cad-9559-a43ea13a9e92",
+      "relativePosition": [
+        -2.68,
+        -2.62
+      ],
+      "weight": 1,
+      "hypothesis": "Named paintings are more appealing to buyers than 'Untitled'"
     }
   ],
   "supportedIdeas": [
