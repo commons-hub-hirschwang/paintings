@@ -86,9 +86,13 @@ admin.get('/paintings', async (c) => {
 })
 
 admin.post('/paintings', async (c) => {
-	const body = await c.req.json<{ title?: string; width_cm?: number; height_cm?: number }>()
-	const id = crypto.randomUUID()
-	await c.env.DB.prepare(`INSERT INTO paintings (id, title, width_cm, height_cm) VALUES (?, ?, ?, ?)`)
+	// id may come from the offline capture store; re-posting the same id updates it (sync retries are safe)
+	const body = await c.req.json<{ id?: string; title?: string; width_cm?: number; height_cm?: number }>()
+	const id = body.id ?? crypto.randomUUID()
+	await c.env.DB.prepare(
+		`INSERT INTO paintings (id, title, width_cm, height_cm) VALUES (?, ?, ?, ?)
+		 ON CONFLICT (id) DO UPDATE SET title = excluded.title, width_cm = excluded.width_cm, height_cm = excluded.height_cm`,
+	)
 		.bind(id, body.title ?? '', body.width_cm ?? null, body.height_cm ?? null)
 		.run()
 	return c.json({ id }, 201)

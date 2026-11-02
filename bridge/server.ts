@@ -8,12 +8,15 @@ import { promisify } from 'node:util'
 import { serve } from '@hono/node-server'
 import { Hono } from 'hono'
 import { calibrate, estimateSizeCm, rectifiedSize, type Calibration, type Quad } from '../shared/geometry'
-import { api, galleryUrl, json } from './api'
-import { publishWebVariants } from './images'
+import sharp from 'sharp'
+import { webVariants } from '../shared/image-variants'
+import { galleryUrl } from './api'
+import { listPaintings, paintingFile, savePainting } from './store'
+import { isSynced, syncAll } from './sync'
 import { warpToRectangle } from './warp'
 
 const run = promisify(execFile)
-const dirs = { raw: 'captures/raw', archive: 'captures/archive' }
+const dirs = { raw: 'captures/raw' }
 const calibrationFile = 'captures/calibration.json'
 // created before every write, so deleting captures/ while the bridge runs is harmless
 const ensureDirs = () => Promise.all(Object.values(dirs).map((dir) => mkdir(dir, { recursive: true })))
@@ -31,7 +34,8 @@ app.get('/status', async (c) => {
 	const { stdout } = await run('gphoto2', ['--auto-detect']).catch(() => ({ stdout: '' }))
 	// output: header, dashes, then "Model   Port" lines
 	const cameras = stdout.split('\n').slice(2).map((line) => line.trim()).filter(Boolean)
-	return c.json({ cameras, calibration: await readCalibration(), galleryUrl })
+	const unsynced = (await listPaintings()).filter((p) => !isSynced(p)).length
+	return c.json({ cameras, calibration: await readCalibration(), galleryUrl, unsynced })
 })
 
 // remote-trigger the tethered camera and download the JPEG
@@ -68,7 +72,7 @@ app.delete('/calibration', async (c) => {
 	return c.json({ ok: true })
 })
 
-// corners selected → rectify, archive, create painting, publish web variants
+// corners selected → rectify and store locally (works offline; uploaded by /sync)
 app.post('/process', async (c) => {
 	await ensureDirs()
 	const body = await c.req.json<{ file: string; quad: Quad; title: string; widthCm?: number; heightCm?: number }>()
@@ -88,17 +92,34 @@ app.post('/process', async (c) => {
 	const { width, height } = rectifiedSize(body.quad, size.widthCm, size.heightCm)
 	const archive = await warpToRectangle(join(dirs.raw, basename(body.file)), body.quad, width, height)
 
+	const { maxSize, quality } = webVariants.thumb
+	const thumb = await sharp(archive).resize({ width: maxSize, height: maxSize, fit: 'inside' }).jpeg({ quality }).toBuffer()
 	const round = (cm: number) => Math.round(cm * 10) / 10
-	const { id } = (await (
-		await api('/paintings', { method: 'POST', ...json({ title: body.title, width_cm: round(size.widthCm), height_cm: round(size.heightCm) }) })
-	).json()) as { id: string }
-	await writeFile(join(dirs.archive, `${id}.jpg`), archive) // local backup of the master
-	await api(`/paintings/${id}/images/archive`, { method: 'PUT', body: new Uint8Array(archive), headers: { 'content-type': 'image/jpeg' } })
-	await publishWebVariants(id, archive)
-
-	return c.json({ id, widthCm: round(size.widthCm), heightCm: round(size.heightCm), width, height })
+	const painting = {
+		id: crypto.randomUUID(),
+		title: body.title,
+		widthCm: round(size.widthCm),
+		heightCm: round(size.heightCm),
+		createdAt: Date.now(),
+		synced: [],
+	}
+	await savePainting(painting, archive, thumb)
+	return c.json(painting)
 })
+
+app.get('/paintings', async (c) =>
+	c.json((await listPaintings()).map((painting) => ({ ...painting, isSynced: isSynced(painting) }))),
+)
+
+app.get('/paintings/:id/thumb.jpg', async (c) => {
+	const file = paintingFile(basename(c.req.param('id')), 'thumb.jpg')
+	if (!existsSync(file)) return c.notFound()
+	return c.body(new Uint8Array(await readFile(file)), 200, { 'content-type': 'image/jpeg' })
+})
+
+// upload everything not yet in GALLERY_URL
+app.post('/sync', async (c) => c.json(await syncAll(console.log)))
 
 const port = 5174
 serve({ fetch: app.fetch, port })
-console.log(`bridge on http://localhost:${port}, publishing to ${galleryUrl}`)
+console.log(`bridge on http://localhost:${port}, syncs to ${galleryUrl}`)

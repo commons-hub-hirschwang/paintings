@@ -37,11 +37,13 @@ grabbed it: `pkill -f gvfs-gphoto2-volume-monitor`.
 3. Calibration: the first painting of a session asks for measured width/height in cm.
    Later sessions ask "Same distance from camera to painting as before? (reuse calibration)".
    Calibration lives in `captures/calibration.json`.
+4. Paintings are stored offline in `captures/paintings/<id>/` (archive, thumb, metadata).
+   Upload them with the **Sync** button or `pnpm sync` (to `GALLERY_URL` in `.env.local`; safe to rerun).
 
 ## Images
 
-The **archive** (rectified, full resolution, JPEG q90) is the private master in R2 (plus a local copy in
-`captures/archive/`). Web variants (`detail` 2560/q80, `normal` 1280/q75, `thumb` 384/q70) are derived
+The **archive** (rectified, full resolution, JPEG q90) is the private master in R2 (plus the local copy in
+`captures/paintings/`). Web variants (`detail` 2560/q80, `normal` 1280/q75, `thumb` 384/q70) are derived
 from it, as configured in `shared/image-variants.ts`. After changing that config:
 
 ```sh

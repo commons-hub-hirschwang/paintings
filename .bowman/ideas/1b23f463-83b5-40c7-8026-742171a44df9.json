@@ -11,9 +11,9 @@
   ],
   "committedIn": [],
   "status": {
-    "state": "human-dependent",
-    "comment": "Bridge + UI done and tested with uploads. Waiting for real camera test: A6400 needs Network → Ctrl w/ Smartphone Off, then Setup → USB Connection → PC Remote; check with gphoto2 --auto-detect.",
-    "date": 1793621698909
+    "state": "implemented",
+    "comment": "Verified 2026-11-02 with the real Sony A6400 (PC Remote): bridge /capture returned a 6000x4000 JPEG in 1.7 s. First attempt timed out (~40 s, no picture, likely focus/wake-up); error now includes gphoto2 output.",
+    "date": 1793621878831
   },
   "intrinsicValue": 0,
   "cost": 1.5,

@@ -1,8 +1,8 @@
 // Client for the local capture bridge (pnpm bridge), reached via the Vite dev proxy.
 import type { Calibration, Quad } from '../shared/geometry'
 
-export type BridgeStatus = { cameras: string[]; calibration: Calibration | null; galleryUrl: string }
-export type Processed = { id: string; widthCm: number; heightCm: number; width: number; height: number }
+export type BridgeStatus = { cameras: string[]; calibration: Calibration | null; galleryUrl: string; unsynced: number }
+export type LocalPainting = { id: string; title: string; widthCm: number; heightCm: number; createdAt: number; isSynced: boolean }
 
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
 	const response = await fetch(`/bridge${path}`, init).catch(() => {
@@ -25,6 +25,9 @@ export const bridge = {
 	upload: (file: File) => call<{ file: string }>('/upload', { method: 'POST', body: file }),
 	forgetCalibration: () => call('/calibration', { method: 'DELETE' }),
 	process: (body: { file: string; quad: Quad; title: string; widthCm?: number; heightCm?: number }) =>
-		call<Processed>('/process', json(body)),
+		call<LocalPainting>('/process', json(body)),
+	paintings: () => call<LocalPainting[]>('/paintings'),
+	sync: () => call<{ synced: number; failed: { id: string; error: string }[] }>('/sync', { method: 'POST' }),
+	thumbUrl: (id: string) => `/bridge/paintings/${id}/thumb.jpg`,
 	rawUrl: (file: string) => `/bridge/raw/${encodeURIComponent(file)}`,
 }

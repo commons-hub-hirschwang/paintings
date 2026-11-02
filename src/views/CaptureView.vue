@@ -2,7 +2,7 @@
 // Local-only capture session (registered in dev builds only): capture → corners → title/size → save.
 import { computed, ref } from 'vue'
 import CornerEditor from '@/components/CornerEditor.vue'
-import { bridge, type BridgeStatus } from '@/bridge'
+import { bridge, type BridgeStatus, type LocalPainting } from '@/bridge'
 import { estimateSizeCm, type Quad } from '../../shared/geometry'
 
 const CONFIRMED = 'capture:calibration-confirmed'
@@ -18,7 +18,7 @@ const widthCm = ref<number | ''>('')
 const heightCm = ref<number | ''>('')
 const busy = ref('')
 const error = ref('')
-const saved = ref<{ id: string; title: string; widthCm: number; heightCm: number }[]>([])
+const paintings = ref<LocalPainting[]>([])
 
 async function run(label: string, task: () => Promise<void>) {
 	busy.value = label
@@ -35,6 +35,7 @@ async function run(label: string, task: () => Promise<void>) {
 const refreshStatus = () =>
 	run('Connecting to bridge…', async () => {
 		status.value = await bridge.status()
+		paintings.value = await bridge.paintings()
 		askReuse.value = !!status.value.calibration && sessionStorage.getItem(CONFIRMED) !== 'yes'
 	})
 refreshStatus()
@@ -74,26 +75,30 @@ function onPhotoLoaded({ width, height }: { width: number; height: number }) {
 }
 
 const save = () =>
-	run('Rectifying and uploading…', async () => {
-		const result = await bridge.process({
+	run('Rectifying…', async () => {
+		await bridge.process({
 			file: photo.value!,
 			quad: quad.value!,
 			title: title.value.trim(),
 			...(measured.value ? { widthCm: Number(widthCm.value), heightCm: Number(heightCm.value) } : {}),
 		})
 		lastQuad = { quad: quad.value!, ...photoSize }
-		saved.value.unshift({ id: result.id, title: title.value.trim(), widthCm: result.widthCm, heightCm: result.heightCm })
-		if (measured.value) {
-			sessionStorage.setItem(CONFIRMED, 'yes')
-			status.value = await bridge.status()
-		}
+		if (measured.value) sessionStorage.setItem(CONFIRMED, 'yes')
+		status.value = await bridge.status()
+		paintings.value = await bridge.paintings()
 		photo.value = null
 		quad.value = null
 		title.value = ''
 		widthCm.value = heightCm.value = ''
 	})
 
-const thumbUrl = (id: string) => `${status.value?.galleryUrl}/img/${id}/thumb.jpg?v=${id}`
+const sync = () =>
+	run(`Syncing to ${status.value?.galleryUrl}…`, async () => {
+		const { failed } = await bridge.sync()
+		status.value = await bridge.status()
+		paintings.value = await bridge.paintings()
+		if (failed.length) error.value = `${failed.length} failed: ${failed[0]!.error}`
+	})
 const cm = (value: number) => value.toFixed(1)
 </script>
 
@@ -103,10 +108,11 @@ const cm = (value: number) => value.toFixed(1)
 			<h1>Capture</h1>
 			<span v-if="status" class="muted">
 				Camera: {{ status.cameras[0] ?? 'none detected' }} ·
-				{{ calibration ? `calibrated, ${calibration.pxPerCm.toFixed(2)} px/cm` : 'not calibrated' }} · publishing to
-				{{ status.galleryUrl }}
+				{{ calibration ? `calibrated, ${calibration.pxPerCm.toFixed(2)} px/cm` : 'not calibrated' }} ·
+				{{ status.unsynced }} not synced to {{ status.galleryUrl }}
 			</span>
 			<button @click="refreshStatus">Refresh</button>
+			<button v-if="status" :disabled="!!busy || !status.unsynced" @click="sync">Sync {{ status.unsynced || '' }}</button>
 		</header>
 
 		<p v-if="error" class="error">{{ error }}</p>
@@ -161,13 +167,15 @@ const cm = (value: number) => value.toFixed(1)
 				</form>
 			</section>
 
-			<section v-if="saved.length" class="saved">
-				<h2>This session ({{ saved.length }})</h2>
-				<figure v-for="painting in saved" :key="painting.id">
-					<img :src="thumbUrl(painting.id)" :alt="painting.title" />
+			<section v-if="paintings.length" class="saved">
+				<h2>Captured ({{ paintings.length }})</h2>
+				<figure v-for="painting in paintings" :key="painting.id">
+					<img :src="bridge.thumbUrl(painting.id)" :alt="painting.title" />
 					<figcaption>
 						{{ painting.title || 'Untitled' }}
-						<span class="muted">{{ cm(painting.widthCm) }} × {{ cm(painting.heightCm) }} cm</span>
+						<span class="muted">
+							{{ cm(painting.widthCm) }} × {{ cm(painting.heightCm) }} cm · {{ painting.isSynced ? 'synced' : 'not synced' }}
+						</span>
 					</figcaption>
 				</figure>
 			</section>
