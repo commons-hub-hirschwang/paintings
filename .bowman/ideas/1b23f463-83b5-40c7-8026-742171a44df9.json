@@ -11,9 +11,9 @@
   ],
   "committedIn": [],
   "status": {
-    "state": "partially",
-    "comment": "bridge/server.ts (Hono on Node, :5174, proxied at /bridge): /status, /capture (gphoto2), /upload (phone fallback), /raw, /process. Processing verified with synthetic photos; real camera capture not yet tested (A6400 needs USB mode PC Remote).",
-    "date": 1793612386977
+    "state": "human-dependent",
+    "comment": "Bridge + UI done and tested with uploads. Waiting for real camera test: A6400 needs Network → Ctrl w/ Smartphone Off, then Setup → USB Connection → PC Remote; check with gphoto2 --auto-detect.",
+    "date": 1793621698909
   },
   "intrinsicValue": 0,
   "cost": 1.5,

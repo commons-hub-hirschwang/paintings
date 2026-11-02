@@ -12,9 +12,9 @@
   ],
   "committedIn": [],
   "status": {
-    "state": "partially",
-    "comment": "Backend done (shared/geometry.ts, bridge /process + DELETE /calibration, captures/calibration.json). Verified: 60x40 cm calibration → 20 px/cm, next painting estimated exactly 40x40 cm. Missing: capture UI prompts (measure / reuse calibration).",
-    "date": 1793612386898
+    "state": "implemented",
+    "comment": "Verified in browser: first painting requires cm (60x40 → 20 px/cm), next shows live estimate 40.0x40.0 cm (exact), new session asks 'Same distance… (reuse calibration)'. Real-camera accuracy still to check with a measured painting.",
+    "date": 1793621698813
   },
   "intrinsicValue": 0,
   "cost": 1.5,

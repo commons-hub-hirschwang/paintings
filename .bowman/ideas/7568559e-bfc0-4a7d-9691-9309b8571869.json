@@ -11,9 +11,9 @@
   ],
   "committedIn": [],
   "status": {
-    "state": "open",
-    "comment": "",
-    "date": 1793609516627
+    "state": "implemented",
+    "comment": "src/components/CornerEditor.vue. Verified headless (chromium + puppeteer) 2026-11-02: dragged 4 corners onto a synthetic rotated painting; loupe shows the corner marker at the crosshair; rectified result correct.",
+    "date": 1793621698596
   },
   "intrinsicValue": 0,
   "cost": 2,

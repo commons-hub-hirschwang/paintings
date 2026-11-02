@@ -23,6 +23,8 @@ pnpm dev                         # app + Worker on :5173
 pnpm bridge                      # capture bridge on :5174 (proxied at /bridge)
 ```
 
+Capture screen: http://localhost:5173/capture (dev builds only, never deployed).
+
 ## Capture
 
 Camera: Sony α6400 via USB. Menu: **Network → Ctrl w/ Smartphone → Off** (otherwise USB Connection is greyed out),
