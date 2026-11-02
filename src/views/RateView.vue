@@ -13,12 +13,21 @@ const error = ref('')
 const unrated = computed(() => paintings.value.filter((p) => p.my_score === null))
 const rated = computed(() => paintings.value.filter((p) => p.my_score !== null))
 const current = computed(() => paintings.value.find((p) => p.id === currentId.value) ?? null)
+const scores = [10, 9, 8, 7, 6, 5, 4, 3, 2, 1]
 
 async function load() {
 	paintings.value = await authed<RatePainting[]>('/api/rate/paintings')
-	currentId.value ??= unrated.value[0]?.id ?? null
+	currentId.value ??= (unrated.value[0] ?? paintings.value[0])?.id ?? null
 }
 watch(user, (u) => u && load().catch((e) => (error.value = e.message)), { immediate: true })
+
+// next unrated painting after the current one (wrapping); once all are rated, simply the next painting
+function next() {
+	const list = paintings.value
+	const start = list.findIndex((p) => p.id === currentId.value)
+	const ordered = [...list.slice(start + 1), ...list.slice(0, start + 1)]
+	return (ordered.find((p) => p.my_score === null) ?? ordered[0])?.id ?? null
+}
 
 async function rate(score: number) {
 	const painting = current.value
@@ -27,7 +36,7 @@ async function rate(score: number) {
 	try {
 		await authed(`/api/rate/paintings/${painting.id}`, { method: 'PUT', body: JSON.stringify({ score }) })
 		painting.my_score = score
-		currentId.value = unrated.value[0]?.id ?? null
+		currentId.value = next()
 	} catch (e) {
 		error.value = (e as Error).message
 	}
@@ -45,36 +54,38 @@ function onKey(event: KeyboardEvent) {
 }
 onMounted(() => window.addEventListener('keydown', onKey))
 onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
-
-const size = (p: RatePainting) => `${p.width_cm} × ${p.height_cm} cm`
 </script>
 
 <template>
 	<main id="rate">
-		<h1>Rate paintings</h1>
 		<LoginGate :roles="['admin', 'rater']">
-			<p class="warning">
-				Rate the <strong>aesthetics only</strong>, 1 (weak) to 10 (outstanding). Size does not matter here — it is applied as
-				a separate factor in the price.
-			</p>
-			<!-- buttons first, so they stay in the same place for every painting -->
-			<section v-if="current" class="current">
-				<div class="scores">
-					<button v-for="score in 10" :key="score" :class="{ chosen: current.my_score === score }" @click="rate(score)">
-						{{ score }}
-					</button>
-				</div>
-				<p class="info">
-					<strong>{{ current.title || 'Untitled' }}</strong>
-					<span class="muted">· {{ size(current) }} · keys 1–9, 0 = 10 · click image for detail</span>
-				</p>
-				<p v-if="error" class="error">{{ error }}</p>
+			<section v-if="current" class="stage">
+				<aside>
+					<p>
+						Rate the <strong>aesthetics only</strong>: 1 weak – 10 outstanding.
+						<span class="muted">Size is applied separately in the price.</span>
+					</p>
+					<div class="scores">
+						<button v-for="score in scores" :key="score" :class="{ chosen: current.my_score === score }" @click="rate(score)">
+							{{ score }}
+						</button>
+					</div>
+					<p>
+						<strong>{{ current.title || 'Untitled' }}</strong>
+						<br />
+						<span class="muted">{{ current.width_cm }} × {{ current.height_cm }} cm</span>
+					</p>
+					<p class="muted">
+						{{ rated.length }} of {{ paintings.length }} rated<br />
+						Keys 1–9, 0 = 10. Image opens in full detail.
+					</p>
+					<p v-if="error" class="error">{{ error }}</p>
+				</aside>
 				<a :href="imageUrl(current, 'detail')" target="_blank">
-					<img :src="imageUrl(current, 'normal')" :alt="current.title" />
+					<img :src="imageUrl(current, 'detail')" :alt="current.title" />
 				</a>
 			</section>
 			<p v-else-if="error" class="error">{{ error }}</p>
-			<p v-else-if="paintings.length">All {{ paintings.length }} paintings rated — thank you! Click one to change your rating.</p>
 			<p v-else class="muted">No paintings to rate yet.</p>
 
 			<section v-for="group in [{ title: 'Not rated yet', list: unrated }, { title: 'Rated', list: rated }]" :key="group.title">
@@ -104,36 +115,57 @@ const size = (p: RatePainting) => `${p.width_cm} × ${p.height_cm} cm`
 	flex-direction: column;
 	gap: var(--gap);
 
-	& .current {
-		display: flex;
-		flex-direction: column;
-		align-items: center;
+	/* fills the viewport: fixed sidebar with the buttons, image as large as fits (any aspect ratio) */
+	& .stage {
+		display: grid;
+		grid-template-columns: 11rem 1fr;
 		gap: var(--gap);
-		text-align: center;
+		height: calc(100dvh - 2 * var(--gap));
 
-		& .info {
-			margin: 0;
-			max-width: 100%;
-			white-space: nowrap;
-			overflow: hidden;
-			text-overflow: ellipsis;
+		& aside {
+			display: flex;
+			flex-direction: column;
+			gap: var(--gap);
+			min-height: 0;
+			font-size: 0.9rem;
+
+			& p {
+				margin: 0;
+			}
 		}
 
-		& img {
+		& > a {
+			min-width: 0;
+			min-height: 0;
+		}
+
+		& > a img {
 			display: block;
-			max-width: 100%;
-			max-height: 70vh;
+			width: 100%;
+			height: 100%;
+			object-fit: contain;
+			object-position: center top;
+		}
+
+		@media (max-width: 40rem) {
+			grid-template-columns: 1fr;
+			grid-template-rows: auto 60dvh;
+			height: auto;
 		}
 	}
 
 	& .scores {
 		display: flex;
-		justify-content: center;
-		gap: 0.4rem;
+		flex-direction: column;
+		gap: 0.3rem;
+
+		@media (max-width: 40rem) {
+			flex-direction: row-reverse;
+		}
 
 		& button {
-			width: 2.6rem;
-			padding: 0.4rem 0;
+			flex: 1;
+			padding: 0.35rem 0;
 
 			&.chosen {
 				background: var(--fg);

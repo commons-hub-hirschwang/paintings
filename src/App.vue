@@ -23,6 +23,13 @@ loadUser()
 	gap: var(--gap);
 	margin-bottom: var(--gap);
 
-	justify-content: flex-end;
+	/* floats bottom-right, takes no layout space (rating stage uses the full viewport) */
+	position: fixed;
+	right: var(--gap);
+	bottom: var(--gap);
+	z-index: 1;
+	padding: 0.2rem 0.6rem;
+	border-radius: 0.3rem;
+	background: var(--bg);
 }
 </style>
