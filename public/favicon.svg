@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+	<style>
+		.frame { fill: none; stroke: #8a6a2f; }
+		.picture { fill: #e9dcc0; }
+		@media (prefers-color-scheme: dark) { .frame { stroke: #d6b26a; } .picture { fill: #3a3326; } }
+	</style>
+	<!-- gilded frame with small corner ornaments -->
+	<rect class="picture" x="7" y="7" width="18" height="18" />
+	<rect class="frame" x="4" y="4" width="24" height="24" stroke-width="3" />
+	<rect class="frame" x="7.5" y="7.5" width="17" height="17" stroke-width="1" />
+	<g fill="#8a6a2f">
+		<circle cx="4" cy="4" r="2.6" />
+		<circle cx="28" cy="4" r="2.6" />
+		<circle cx="4" cy="28" r="2.6" />
+		<circle cx="28" cy="28" r="2.6" />
+	</g>
+</svg>
