@@ -1,0 +1,24 @@
+{
+  "id": "b57de3cf-b2ca-41c1-8af0-94dede71d467",
+  "text": "Groups (physical stacks) with numbers: \"A #0\", \"A #1\", … for finding paintings",
+  "description": "Each capture project starts with group A; group select next to the name with \"New group…\" (B, C, …). Number within the group auto-increments from #0. Synced to the website (group_name, number) and shown in admin, rating overlay and capture list.",
+  "archived": false,
+  "color": "#293161",
+  "tags": [],
+  "supportingConnections": [],
+  "supportedIdeas": [
+    "ad5688bd-d88a-4128-8c41-00ea2bfc4429"
+  ],
+  "committedIn": [],
+  "status": {
+    "state": "implemented",
+    "comment": "Commit 1e97e54. Verified locally: existing paintings numbered A #0–#5, new group B → B #0, synced to D1, shown in admin/rate/capture (screenshots). Not deployed yet.",
+    "date": 1793656357538
+  },
+  "intrinsicValue": 0,
+  "cost": 1,
+  "selfWeight": 1,
+  "duration": 1,
+  "costVariance": 0,
+  "valueVariance": 0
+}

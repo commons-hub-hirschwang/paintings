@@ -1,7 +1,7 @@
 {
   "id": "6d22fe2b-e4f4-431b-a8ba-91cc441841df",
   "text": "Shipping options: pick-up (0 €) or size-dependent shipping",
-  "description": "Two options at checkout: pick-up (0 €) or shipping priced by painting size. Paintings are in Austria → research Österreichische Post / DPD / GLS rates (AT + EU), size limits for large flat items, bulky surcharges, art shipping for oversize, insurance. Tiers in shared/shipping.ts.",
+  "description": "Pick-up (0 €) or shipping priced from painting size. shared/shipping.ts uses Österreichische Post tariff 1 Jul 2026: Paket Österreich by weight (6.61–21.13 €) + großes Sperrgut (+20/24 €) when longer than 100×60 cm, up to 200 cm; Paket Plus International zone 1b (19.01–83.40 €) up to 100×60 cm. Package = painting + 10 cm, weight ≈ 1.5 kg + 8 kg/m², + 8 € packaging. Larger: pick-up only.",
   "archived": false,
   "color": "#566730",
   "tags": [],
@@ -11,9 +11,9 @@
   ],
   "committedIn": [],
   "status": {
-    "state": "partially",
-    "comment": "Built: pick-up + tiers by width+height in shared/shipping.ts with PLACEHOLDER prices. Carrier research open (deferred by user).",
-    "date": 1793653287197
+    "state": "implemented",
+    "comment": "Commit 1e97e54. Examples: 30×40 → AT 18 € / EU 34 €; 60×80 → AT 42 €, no EU; 150×200 → pick-up only. Sperrgut size classes assumed (definition not found). Not deployed yet.",
+    "date": 1793656338423
   },
   "intrinsicValue": 0,
   "cost": 1.5,

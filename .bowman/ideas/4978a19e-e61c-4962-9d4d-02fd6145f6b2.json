@@ -1,7 +1,7 @@
 {
   "id": "4978a19e-e61c-4962-9d4d-02fd6145f6b2",
   "text": "Pricing model: price = f(avg aesthetic rating) × size factor",
-  "description": "Combine the averaged 1–10 aesthetic rating with the real measured area (cm²) into a price. Formula and base rates live in config (LLM-edited, hot-reloaded), not in an admin form.",
+  "description": "Price = formula over width_cm, height_cm, area_m2, rating (avg). Formula in a tiny non-Turing-complete expression language (shared/expr.ts), editable with live preview on /admin, stored in D1 settings. Default max(80, round(600 * area_m2^0.8 * (rating / 5)^1.5, 10)); always rounded to whole euros.",
   "archived": false,
   "color": "#662d63",
   "tags": [],
@@ -32,7 +32,7 @@
   "committedIn": [],
   "status": {
     "state": "implemented",
-    "comment": "shared/pricing.ts: 600 €/m² at rating 5, area^0.8, (rating/5)^1.5, min 80, round 10. Public API returns price only (rating private). Verified locally (46×48 cm → 360 €). Numbers need owner review.",
+    "comment": "Commit 1e97e54. Verified locally: invalid formula rejected with position, save + reset; admin preview screenshot. User explicitly asked for admin editing (overrides config-only preference). Not deployed yet.",
     "date": 1793631249966
   },
   "intrinsicValue": 0,

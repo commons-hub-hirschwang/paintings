@@ -1,0 +1,24 @@
+{
+  "id": "0ffdf242-8446-45fb-a3ec-97e4c8a1dc88",
+  "text": "Keep original photo crop (corners bounding box + 50 px) and corner coordinates for later corrections",
+  "description": "Instead of the whole raw photo: original.jpg (q90) = bounding box of the selected quad + 50 px margin, plus the corners relative to the crop and the crop offset in painting.json. Uploaded privately to R2 (variant 'original'). Enables re-rectifying with corrected corners later.",
+  "archived": false,
+  "color": "#3e3167",
+  "tags": [],
+  "supportingConnections": [],
+  "supportedIdeas": [
+    "ad5688bd-d88a-4128-8c41-00ea2bfc4429"
+  ],
+  "committedIn": [],
+  "status": {
+    "state": "implemented",
+    "comment": "Commit 1e97e54. Verified locally: 2100x1900 crop with corners at 50 px offset, uploaded on sync. Not built yet: UI to re-edit corners from the crop; raw photos are still kept locally.",
+    "date": 1793656357710
+  },
+  "intrinsicValue": 0,
+  "cost": 1,
+  "selfWeight": 1,
+  "duration": 1,
+  "costVariance": 0,
+  "valueVariance": 0
+}

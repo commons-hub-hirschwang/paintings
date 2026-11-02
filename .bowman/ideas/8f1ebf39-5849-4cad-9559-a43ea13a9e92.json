@@ -11,9 +11,9 @@
   ],
   "committedIn": [],
   "status": {
-    "state": "open",
-    "comment": "",
-    "date": 1793639168658
+    "state": "implemented",
+    "comment": "Commit 1e97e54: role author (name:pw:author); PUT /api/rate/paintings/:id/title (author/admin); name field in rating overlay + admin table; capture upsert sets title only on insert. Verified locally: renamed online, re-synced, name kept. Not deployed yet.",
+    "date": 1793656338293
   },
   "intrinsicValue": 0,
   "cost": 1,

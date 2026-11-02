@@ -85,6 +85,24 @@
       ],
       "weight": 1,
       "hypothesis": "Separating test, real and client collections prevents mixing photos/calibrations and lets one laptop serve several collections"
+    },
+    {
+      "ideaId": "b57de3cf-b2ca-41c1-8af0-94dede71d467",
+      "relativePosition": [
+        3.15,
+        -2.04
+      ],
+      "weight": 1,
+      "hypothesis": "Labelling paintings by stack + position lets anyone find the physical painting from its online entry"
+    },
+    {
+      "ideaId": "0ffdf242-8446-45fb-a3ec-97e4c8a1dc88",
+      "relativePosition": [
+        2.1,
+        -3.11
+      ],
+      "weight": 1,
+      "hypothesis": "Keeping the crop + corners allows fixing bad corner placement later without re-photographing"
     }
   ],
   "supportedIdeas": [
