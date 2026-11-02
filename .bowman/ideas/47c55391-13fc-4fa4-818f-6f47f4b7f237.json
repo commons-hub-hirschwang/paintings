@@ -1,0 +1,24 @@
+{
+  "id": "47c55391-13fc-4fa4-818f-6f47f4b7f237",
+  "text": "Unique-item inventory: available / reserved / sold states",
+  "description": "Each painting is one-of-a-kind: reserve during checkout, mark sold after payment, prevent double sale; sold paintings optionally still shown as \"sold\".",
+  "archived": false,
+  "color": "#4b632d",
+  "tags": [],
+  "supportingConnections": [],
+  "supportedIdeas": [
+    "f8aaafd1-4210-4462-996a-c8153536583c"
+  ],
+  "committedIn": [],
+  "status": {
+    "state": "open",
+    "comment": "",
+    "date": 1793609517227
+  },
+  "intrinsicValue": 0,
+  "cost": 0.5,
+  "selfWeight": 1,
+  "duration": 1,
+  "costVariance": 0,
+  "valueVariance": 0
+}

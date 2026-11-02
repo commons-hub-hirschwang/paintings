@@ -1,0 +1,24 @@
+{
+  "id": "6d22fe2b-e4f4-431b-a8ba-91cc441841df",
+  "text": "Shipping options: pick-up (0 €) or size-dependent shipping",
+  "description": "Two options at checkout. Shipping price tiers by painting dimensions (incl. packaging/girth limits). Needs research: DHL/DPD/GLS/Hermes parcel size limits and prices for large flat items, Sperrgut surcharges, art-shipping services for oversize, insurance. Tiers kept in config.",
+  "archived": false,
+  "color": "#566730",
+  "tags": [],
+  "supportingConnections": [],
+  "supportedIdeas": [
+    "f8aaafd1-4210-4462-996a-c8153536583c"
+  ],
+  "committedIn": [],
+  "status": {
+    "state": "open",
+    "comment": "",
+    "date": 1793609517156
+  },
+  "intrinsicValue": 0,
+  "cost": 1.5,
+  "selfWeight": 1,
+  "duration": 1,
+  "costVariance": 0,
+  "valueVariance": 0
+}

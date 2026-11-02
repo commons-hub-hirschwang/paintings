@@ -1,0 +1,24 @@
+{
+  "id": "2d4d73a1-fea0-4238-8862-7af5c4838766",
+  "text": "Perspective warp of the 4-point quad to a perfect rectangle",
+  "description": "Compute homography from the 4 selected corners and rectify the image to a straight rectangle (aspect ratio from calibrated real size). Store original + rectified image.",
+  "archived": false,
+  "color": "#2f2c6c",
+  "tags": [],
+  "supportingConnections": [],
+  "supportedIdeas": [
+    "ad5688bd-d88a-4128-8c41-00ea2bfc4429"
+  ],
+  "committedIn": [],
+  "status": {
+    "state": "open",
+    "comment": "",
+    "date": 1793609516717
+  },
+  "intrinsicValue": 0,
+  "cost": 1.5,
+  "selfWeight": 1,
+  "duration": 1,
+  "costVariance": 0,
+  "valueVariance": 0
+}

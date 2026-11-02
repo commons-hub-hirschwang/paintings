@@ -1,0 +1,25 @@
+{
+  "id": "c5bc60d9-6f05-4c2b-892d-2156c00a1dae",
+  "text": "Login for admins and evaluators",
+  "description": "Lightweight auth (e.g. magic link or Cloudflare Access) identifying each evaluator so ratings are attributed per person; capture tool restricted to admins.",
+  "archived": false,
+  "color": "#273961",
+  "tags": [],
+  "supportingConnections": [],
+  "supportedIdeas": [
+    "e2eacf4b-f70d-4544-9309-6a8a71950b15",
+    "38c9b817-05b4-441a-8018-8ad990794f76"
+  ],
+  "committedIn": [],
+  "status": {
+    "state": "open",
+    "comment": "",
+    "date": 1793609517302
+  },
+  "intrinsicValue": 0,
+  "cost": 1,
+  "selfWeight": 1,
+  "duration": 1,
+  "costVariance": 0,
+  "valueVariance": 0
+}

@@ -1,0 +1,24 @@
+{
+  "id": "654f03da-8604-4afc-9c4f-b0f1af71b23b",
+  "text": "Rating UI 1–10 with \"aesthetics only, size is applied separately\" note",
+  "description": "Large image view + 1–10 scale. Prominent hint that only aesthetics should be judged because size is multiplied in as a separate factor. Ratings editable later.",
+  "archived": false,
+  "color": "#426128",
+  "tags": [],
+  "supportingConnections": [],
+  "supportedIdeas": [
+    "38c9b817-05b4-441a-8018-8ad990794f76"
+  ],
+  "committedIn": [],
+  "status": {
+    "state": "open",
+    "comment": "",
+    "date": 1793609516991
+  },
+  "intrinsicValue": 0,
+  "cost": 1,
+  "selfWeight": 1,
+  "duration": 1,
+  "costVariance": 0,
+  "valueVariance": 0
+}

@@ -1,0 +1,24 @@
+{
+  "id": "7568559e-bfc0-4a7d-9691-9309b8571869",
+  "text": "Manual 4-corner selection with magnifier loupe",
+  "description": "Click/drag the 4 painting corners on the photo; a circular magnifier follows the pointer/finger and shows the area under it zoomed with a crosshair for precise placement (touch-friendly: loupe offset from finger).",
+  "archived": false,
+  "color": "#442f6c",
+  "tags": [],
+  "supportingConnections": [],
+  "supportedIdeas": [
+    "ad5688bd-d88a-4128-8c41-00ea2bfc4429"
+  ],
+  "committedIn": [],
+  "status": {
+    "state": "open",
+    "comment": "",
+    "date": 1793609516627
+  },
+  "intrinsicValue": 0,
+  "cost": 2,
+  "selfWeight": 1,
+  "duration": 1,
+  "costVariance": 0,
+  "valueVariance": 0
+}

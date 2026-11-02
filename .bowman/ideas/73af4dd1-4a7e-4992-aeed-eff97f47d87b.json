@@ -1,0 +1,24 @@
+{
+  "id": "73af4dd1-4a7e-4992-aeed-eff97f47d87b",
+  "text": "Fixed camera rig: same camera position for every painting",
+  "description": "Tripod/fixed mount at a constant distance and angle to a wall/easel where paintings are placed; even lighting (avoid glare on varnish). Required for size calibration to stay valid.",
+  "archived": false,
+  "color": "#332f65",
+  "tags": [],
+  "supportingConnections": [],
+  "supportedIdeas": [
+    "ad5688bd-d88a-4128-8c41-00ea2bfc4429"
+  ],
+  "committedIn": [],
+  "status": {
+    "state": "human-dependent",
+    "comment": "Physical setup in the attic: tripod, marked painting position, lighting.",
+    "date": 1793609516481
+  },
+  "intrinsicValue": 0,
+  "cost": 1,
+  "selfWeight": 1,
+  "duration": 1,
+  "costVariance": 0,
+  "valueVariance": 0
+}

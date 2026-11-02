@@ -1,0 +1,68 @@
+{
+  "id": "ad5688bd-d88a-4128-8c41-00ea2bfc4429",
+  "text": "Painting digitalization tool (admin capture flow)",
+  "description": "Browser-based admin tool to photograph ~100 paintings quickly and consistently: fixed camera position, type a title, select 4 corners with a magnifier, perspective-correct to a perfect rectangle, derive real size via calibration.",
+  "archived": false,
+  "color": "#342d66",
+  "tags": [],
+  "supportingConnections": [
+    {
+      "ideaId": "73af4dd1-4a7e-4992-aeed-eff97f47d87b",
+      "relativePosition": [
+        0.43,
+        3.73
+      ],
+      "weight": 1,
+      "hypothesis": "A constant camera distance makes pixel size proportional to real size, so one calibration serves all paintings"
+    },
+    {
+      "ideaId": "48d13592-5c8d-44f9-9854-c3943915d821",
+      "relativePosition": [
+        -1.5,
+        -3.44
+      ],
+      "weight": 1
+    },
+    {
+      "ideaId": "7568559e-bfc0-4a7d-9691-9309b8571869",
+      "relativePosition": [
+        3.75,
+        0.1
+      ],
+      "weight": 1,
+      "hypothesis": "Precise manual corners give a clean crop and accurate size without fragile automatic edge detection"
+    },
+    {
+      "ideaId": "2d4d73a1-fea0-4238-8862-7af5c4838766",
+      "relativePosition": [
+        0.27,
+        3.74
+      ],
+      "weight": 1
+    },
+    {
+      "ideaId": "25f5dcb6-8298-403a-9a43-d0d46c4cb638",
+      "relativePosition": [
+        2.31,
+        -2.95
+      ],
+      "weight": 1,
+      "hypothesis": "One manual measurement per session yields real cm sizes for all paintings within a few % error"
+    }
+  ],
+  "supportedIdeas": [
+    "0840cc33-84a1-43a4-b21d-ead616fc08a3"
+  ],
+  "committedIn": [],
+  "status": {
+    "state": "open",
+    "comment": "",
+    "date": 1793609458156
+  },
+  "intrinsicValue": 0,
+  "cost": 3,
+  "selfWeight": 1,
+  "duration": 1,
+  "costVariance": 0,
+  "valueVariance": 0
+}

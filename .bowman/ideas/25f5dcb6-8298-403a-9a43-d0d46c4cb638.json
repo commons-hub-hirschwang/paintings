@@ -1,0 +1,25 @@
+{
+  "id": "25f5dcb6-8298-403a-9a43-d0d46c4cb638",
+  "text": "Real-size calibration: measure first painting, reuse across sessions",
+  "description": "On the first digitalization of a session, after selecting the 4 corners, prompt for the actual measured width/height (cm) → store px/cm calibration. At the start of later sessions ask \"Same distance from camera to painting as before? (reuse calibration)\" — yes reuses it, no triggers a fresh measurement. Warn that the camera must not move within a session. Real size of every painting is then derived, making captures from different sessions comparable.",
+  "archived": false,
+  "color": "#2d2d6c",
+  "tags": [],
+  "supportingConnections": [],
+  "supportedIdeas": [
+    "ad5688bd-d88a-4128-8c41-00ea2bfc4429",
+    "4978a19e-e61c-4962-9d4d-02fd6145f6b2"
+  ],
+  "committedIn": [],
+  "status": {
+    "state": "open",
+    "comment": "",
+    "date": 1793609516794
+  },
+  "intrinsicValue": 0,
+  "cost": 1.5,
+  "selfWeight": 1,
+  "duration": 1,
+  "costVariance": 0,
+  "valueVariance": 0
+}

@@ -1,0 +1,59 @@
+{
+  "id": "f8aaafd1-4210-4462-996a-c8153536583c",
+  "text": "Public gallery shop website",
+  "description": "Public side of the same website as the capture/evaluation tool (public vs. admin split). Lists available paintings with title, real size and price; buying via Stripe; shipping choice pick-up or shipped.",
+  "archived": false,
+  "color": "#45662d",
+  "tags": [],
+  "supportingConnections": [
+    {
+      "ideaId": "1daaebae-c49b-4701-bcd2-8d5068e7bffc",
+      "relativePosition": [
+        2.62,
+        -2.68
+      ],
+      "weight": 1
+    },
+    {
+      "ideaId": "6d22fe2b-e4f4-431b-a8ba-91cc441841df",
+      "relativePosition": [
+        -3.06,
+        2.16
+      ],
+      "weight": 1,
+      "hypothesis": "Offering both free pick-up and fairly priced shipping widens the buyer pool without losing money on large paintings"
+    },
+    {
+      "ideaId": "47c55391-13fc-4fa4-818f-6f47f4b7f237",
+      "relativePosition": [
+        -0.14,
+        3.75
+      ],
+      "weight": 1
+    },
+    {
+      "ideaId": "4978a19e-e61c-4962-9d4d-02fd6145f6b2",
+      "relativePosition": [
+        3.6,
+        -1.04
+      ],
+      "weight": 1,
+      "hypothesis": "Computed prices are what the shop displays and charges"
+    }
+  ],
+  "supportedIdeas": [
+    "0840cc33-84a1-43a4-b21d-ead616fc08a3"
+  ],
+  "committedIn": [],
+  "status": {
+    "state": "open",
+    "comment": "",
+    "date": 1793609458369
+  },
+  "intrinsicValue": 0,
+  "cost": 3,
+  "selfWeight": 1,
+  "duration": 1,
+  "costVariance": 0,
+  "valueVariance": 0
+}

@@ -1,0 +1,71 @@
+{
+  "id": "0840cc33-84a1-43a4-b21d-ead616fc08a3",
+  "text": "Digitalize and sell Felix Fritsch's dad's paintings from the attic",
+  "description": "~100 paintings in the attic. Photograph them consistently, measure real size, have multiple people rate aesthetics, derive prices (rating × size), and sell them online via a website with Stripe checkout and pick-up/shipping options.",
+  "archived": false,
+  "color": "#666666",
+  "tags": [
+    "root",
+    "gallery"
+  ],
+  "supportingConnections": [
+    {
+      "ideaId": "ad5688bd-d88a-4128-8c41-00ea2bfc4429",
+      "relativePosition": [
+        2.29,
+        2.97
+      ],
+      "weight": 1,
+      "hypothesis": "A fast, repeatable capture flow makes digitalizing all ~100 paintings feasible in a few sessions with consistent image quality and comparable sizes"
+    },
+    {
+      "ideaId": "38c9b817-05b4-441a-8018-8ad990794f76",
+      "relativePosition": [
+        -2.68,
+        -2.62
+      ],
+      "weight": 1,
+      "hypothesis": "Averaging several people's aesthetic ratings yields fairer, less arbitrary prices than one person deciding"
+    },
+    {
+      "ideaId": "4978a19e-e61c-4962-9d4d-02fd6145f6b2",
+      "relativePosition": [
+        -3.7,
+        -0.64
+      ],
+      "weight": 1,
+      "hypothesis": "A transparent rating×size formula produces consistent prices that buyers accept"
+    },
+    {
+      "ideaId": "f8aaafd1-4210-4462-996a-c8153536583c",
+      "relativePosition": [
+        0.49,
+        -3.72
+      ],
+      "weight": 1,
+      "hypothesis": "A simple online shop reaches more buyers than local word-of-mouth alone and turns the attic stock into sales"
+    },
+    {
+      "ideaId": "e2eacf4b-f70d-4544-9309-6a8a71950b15",
+      "relativePosition": [
+        -2.39,
+        2.89
+      ],
+      "weight": 1,
+      "hypothesis": "Keeping capture, evaluation and shop in one app avoids syncing data between systems"
+    }
+  ],
+  "supportedIdeas": [],
+  "committedIn": [],
+  "status": {
+    "state": "open",
+    "comment": "",
+    "date": 1793609429214
+  },
+  "intrinsicValue": 100,
+  "cost": 1,
+  "selfWeight": 1,
+  "duration": 1,
+  "costVariance": 0,
+  "valueVariance": 0
+}

@@ -1,0 +1,24 @@
+{
+  "id": "48d13592-5c8d-44f9-9854-c3943915d821",
+  "text": "Typeable painting title during capture",
+  "description": "Title input in the capture flow (optional/untitled allowed), saved with the painting record.",
+  "archived": false,
+  "color": "#2c3064",
+  "tags": [],
+  "supportingConnections": [],
+  "supportedIdeas": [
+    "ad5688bd-d88a-4128-8c41-00ea2bfc4429"
+  ],
+  "committedIn": [],
+  "status": {
+    "state": "open",
+    "comment": "",
+    "date": 1793609516554
+  },
+  "intrinsicValue": 0,
+  "cost": 0.3,
+  "selfWeight": 1,
+  "duration": 1,
+  "costVariance": 0,
+  "valueVariance": 0
+}

@@ -1,0 +1,52 @@
+{
+  "id": "38c9b817-05b4-441a-8018-8ad990794f76",
+  "text": "Online aesthetic evaluation by multiple people (scale 1–10)",
+  "description": "Admin/evaluator area of the website. Each evaluator rates every painting 1–10 on aesthetics only, with a clear note that size is applied as a separate factor on top. Shows each evaluator their list of not-yet-evaluated paintings. Average across evaluators = aesthetic price factor.",
+  "archived": false,
+  "color": "#46662d",
+  "tags": [],
+  "supportingConnections": [
+    {
+      "ideaId": "6f7b75d3-ad29-4db9-bde3-da00475b6b22",
+      "relativePosition": [
+        -2.99,
+        -2.26
+      ],
+      "weight": 1,
+      "hypothesis": "A to-do list gets every evaluator to rate all ~100 paintings, so averages are complete"
+    },
+    {
+      "ideaId": "654f03da-8604-4afc-9c4f-b0f1af71b23b",
+      "relativePosition": [
+        -3.72,
+        -0.46
+      ],
+      "weight": 1,
+      "hypothesis": "Explicitly separating aesthetics from size prevents evaluators from double-counting size in the price"
+    },
+    {
+      "ideaId": "c5bc60d9-6f05-4c2b-892d-2156c00a1dae",
+      "relativePosition": [
+        3.71,
+        0.52
+      ],
+      "weight": 1
+    }
+  ],
+  "supportedIdeas": [
+    "0840cc33-84a1-43a4-b21d-ead616fc08a3",
+    "4978a19e-e61c-4962-9d4d-02fd6145f6b2"
+  ],
+  "committedIn": [],
+  "status": {
+    "state": "open",
+    "comment": "",
+    "date": 1793609458228
+  },
+  "intrinsicValue": 0,
+  "cost": 2,
+  "selfWeight": 1,
+  "duration": 1,
+  "costVariance": 0,
+  "valueVariance": 0
+}

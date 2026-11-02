@@ -1,0 +1,33 @@
+{
+  "id": "e2eacf4b-f70d-4544-9309-6a8a71950b15",
+  "text": "Single web app: public shop + authenticated admin/evaluator area",
+  "description": "One codebase/deployment with a public side and an auth-protected admin side (capture tool, evaluations). Shared storage for images (originals + rectified) and painting/rating data. Likely Cloudflare (Workers + R2 + D1) on a *.commons-hub.at subdomain — to be decided.",
+  "archived": false,
+  "color": "#2d4066",
+  "tags": [],
+  "supportingConnections": [
+    {
+      "ideaId": "c5bc60d9-6f05-4c2b-892d-2156c00a1dae",
+      "relativePosition": [
+        3.26,
+        -1.86
+      ],
+      "weight": 1
+    }
+  ],
+  "supportedIdeas": [
+    "0840cc33-84a1-43a4-b21d-ead616fc08a3"
+  ],
+  "committedIn": [],
+  "status": {
+    "state": "open",
+    "comment": "",
+    "date": 1793609458435
+  },
+  "intrinsicValue": 0,
+  "cost": 2,
+  "selfWeight": 1,
+  "duration": 1,
+  "costVariance": 0,
+  "valueVariance": 0
+}

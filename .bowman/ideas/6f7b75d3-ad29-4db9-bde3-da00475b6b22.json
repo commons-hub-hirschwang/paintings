@@ -1,0 +1,24 @@
+{
+  "id": "6f7b75d3-ad29-4db9-bde3-da00475b6b22",
+  "text": "Per-evaluator list of not-yet-evaluated paintings",
+  "description": "Each logged-in evaluator sees which paintings they haven't rated yet and can work through them one by one.",
+  "archived": false,
+  "color": "#4b612e",
+  "tags": [],
+  "supportingConnections": [],
+  "supportedIdeas": [
+    "38c9b817-05b4-441a-8018-8ad990794f76"
+  ],
+  "committedIn": [],
+  "status": {
+    "state": "open",
+    "comment": "",
+    "date": 1793609516922
+  },
+  "intrinsicValue": 0,
+  "cost": 0.5,
+  "selfWeight": 1,
+  "duration": 1,
+  "costVariance": 0,
+  "valueVariance": 0
+}
