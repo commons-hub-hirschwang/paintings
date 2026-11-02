@@ -1,6 +1,6 @@
 <script setup lang="ts">
-// Drag the 4 painting corners on the photo; a magnifier shows the full-resolution pixels under the dragged
-// corner. Arrow keys nudge the selected corner by 1 px (Shift: 10 px), keys 1–4 select a corner.
+// Set the 4 painting corners: press anywhere and the nearest corner moves with the mouse (cursor hidden,
+// magnifier shown, Shift = 1/10 speed). Arrow keys nudge the selected corner by 1 px (Shift: 10 px), keys 1–4 select.
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { Point, Quad } from '../../shared/geometry'
 
@@ -21,7 +21,7 @@ const dragging = ref(false)
 const loupeVisible = ref(false)
 
 const points = computed(() => (quad.value ?? []).map((p) => `${p.x},${p.y}`).join(' '))
-const handleRadius = computed(() => 9 / displayScale.value)
+const handleRadius = computed(() => 14 / displayScale.value)
 
 function onLoad() {
 	const img = image.value!
@@ -38,36 +38,53 @@ const resizeObserver = new ResizeObserver(updateScale)
 onMounted(() => resizeObserver.observe(image.value!))
 onBeforeUnmount(() => resizeObserver.disconnect())
 
-function toPhoto(event: PointerEvent): Point {
-	const rect = image.value!.getBoundingClientRect()
-	const clamp = (value: number, max: number) => Math.min(Math.max(value, 0), max)
-	return {
-		x: clamp((event.clientX - rect.left) / displayScale.value, natural.value.width),
-		y: clamp((event.clientY - rect.top) / displayScale.value, natural.value.height),
-	}
-}
-
 function setCorner(index: number, point: Point) {
 	const next = [...quad.value!] as Quad
 	next[index] = point
 	quad.value = next
 }
 
-function startDrag(index: number, event: PointerEvent) {
-	selected.value = index
+// Press anywhere: the nearest corner follows the pointer *relatively* (no jump), with the cursor hidden
+// (pointer lock) and the magnifier shown instead. Shift: 1/10 speed for precision.
+let dragPoint: Point = { x: 0, y: 0 } // local, since v-model updates lag one render behind
+let lastClient: Point = { x: 0, y: 0 }
+
+function startDrag(event: PointerEvent) {
+	if (!quad.value || event.button !== 0) return
+	const rect = image.value!.getBoundingClientRect()
+	const pointer = { x: (event.clientX - rect.left) / displayScale.value, y: (event.clientY - rect.top) / displayScale.value }
+	const distances = quad.value.map((corner) => Math.hypot(corner.x - pointer.x, corner.y - pointer.y))
+	selected.value = distances.indexOf(Math.min(...distances))
+	dragPoint = { ...quad.value[selected.value]! }
+	lastClient = { x: event.clientX, y: event.clientY }
 	dragging.value = true
 	loupeVisible.value = true
-	;(event.target as Element).setPointerCapture(event.pointerId)
-	setCorner(index, toPhoto(event))
+	const editor = event.currentTarget as HTMLElement
+	editor.setPointerCapture(event.pointerId)
+	if (event.pointerType === 'mouse') Promise.resolve(editor.requestPointerLock()).catch(() => {})
 }
 
 function drag(event: PointerEvent) {
-	if (dragging.value && quad.value) setCorner(selected.value, toPhoto(event))
+	if (!dragging.value) return
+	// locked mouse: clientX is frozen, use movementX; touch/pen: client deltas
+	const locked = document.pointerLockElement !== null
+	const dx = locked ? event.movementX : event.clientX - lastClient.x
+	const dy = locked ? event.movementY : event.clientY - lastClient.y
+	lastClient = { x: event.clientX, y: event.clientY }
+	const speed = (event.shiftKey ? 0.1 : 1) / displayScale.value
+	const clamp = (value: number, max: number) => Math.min(Math.max(value, 0), max)
+	dragPoint = {
+		x: clamp(dragPoint.x + dx * speed, natural.value.width),
+		y: clamp(dragPoint.y + dy * speed, natural.value.height),
+	}
+	setCorner(selected.value, dragPoint)
 }
 
 function endDrag() {
+	if (!dragging.value) return
 	dragging.value = false
 	loupeVisible.value = false
+	if (document.pointerLockElement) document.exitPointerLock()
 }
 
 function onKey(event: KeyboardEvent) {
@@ -136,7 +153,7 @@ const loupeStyle = computed(() => {
 </script>
 
 <template>
-	<div id="corner-editor" @pointermove="drag" @pointerup="endDrag" @pointercancel="endDrag">
+	<div id="corner-editor" :class="{ dragging }" @pointerdown.prevent="startDrag" @pointermove="drag" @pointerup="endDrag" @pointercancel="endDrag">
 		<img ref="image" :src="props.src" alt="captured photo" draggable="false" @load="onLoad" />
 		<svg v-if="natural.width && quad" :viewBox="`0 0 ${natural.width} ${natural.height}`" preserveAspectRatio="none">
 			<polygon :points="points" />
@@ -147,7 +164,6 @@ const loupeStyle = computed(() => {
 				:cy="corner.y"
 				:r="handleRadius"
 				:class="{ selected: index === selected }"
-				@pointerdown.prevent="startDrag(index, $event)"
 			>
 				<title>{{ index + 1 }}: {{ labels[index] }}</title>
 			</circle>
@@ -162,6 +178,11 @@ const loupeStyle = computed(() => {
 	display: inline-block;
 	touch-action: none;
 	user-select: none;
+	cursor: crosshair;
+
+	&.dragging {
+		cursor: none;
+	}
 
 	& img {
 		display: block;
@@ -188,7 +209,6 @@ const loupeStyle = computed(() => {
 			stroke: #000;
 			stroke-width: 1px;
 			vector-effect: non-scaling-stroke;
-			cursor: grab;
 
 			&.selected {
 				fill: rgba(255, 0, 255, 0.5);

@@ -137,7 +137,7 @@ const cm = (value: number) => value.toFixed(1)
 				<CornerEditor v-model="quad" :src="bridge.rawUrl(photo)" @loaded="onPhotoLoaded" />
 
 				<form @submit.prevent="canSave && save()">
-					<p class="muted">Drag the corners onto the painting's edges. Keys 1–4 select a corner, arrows nudge it (Shift: 10 px).</p>
+					<p class="muted">Press anywhere and move: the nearest corner follows (Shift = slow). Keys 1–4 select a corner, arrows nudge it.</p>
 					<label>
 						Title
 						<input v-model="title" placeholder="Untitled" autofocus />
