@@ -1,0 +1,43 @@
+{
+  "name": "art-commons-hub",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "run-p type-check \"build-only {@}\" --",
+    "preview": "pnpm build && wrangler dev",
+    "build-only": "vite build",
+    "type-check": "vue-tsc --build",
+    "cf-typegen": "wrangler types",
+    "deploy:commons": "pnpm build && wrangler deploy --env commons",
+    "bridge": "tsx watch bridge/server.ts",
+    "images:regen": "tsx scripts/regen-variants.ts",
+    "db:migrate": "wrangler d1 migrations apply DB --local",
+    "db:migrate:commons": "wrangler d1 migrations apply DB --remote --env commons"
+  },
+  "dependencies": {
+    "hono": "^4.13.16",
+    "vue": "^3.5.42",
+    "vue-router": "^5.3.1"
+  },
+  "devDependencies": {
+    "@cloudflare/vite-plugin": "^1.67.0",
+    "@hono/node-server": "^2.1.5",
+    "@tsconfig/node24": "^24.0.5",
+    "@types/node": "^24.19.2",
+    "@vitejs/plugin-vue": "^6.0.8",
+    "@vue/tsconfig": "^0.9.1",
+    "npm-run-all2": "^9.0.3",
+    "sharp": "^0.35.5",
+    "tsx": "^4.23.15",
+    "typescript": "~6.0.0",
+    "vite": "^8.2.2",
+    "vite-plugin-vue-devtools": "^8.2.1",
+    "vue-tsc": "^3.3.11",
+    "wrangler": "^4.156.1"
+  },
+  "engines": {
+    "node": "^22.18.0 || >=24.12.0"
+  }
+}

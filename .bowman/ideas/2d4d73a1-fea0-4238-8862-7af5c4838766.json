@@ -11,9 +11,9 @@
   ],
   "committedIn": [],
   "status": {
-    "state": "open",
-    "comment": "",
-    "date": 1793609516717
+    "state": "implemented",
+    "comment": "bridge/warp.ts: homography + bilinear sampling on sharp raw buffer, output aspect from real cm size. Verified with a synthetic 5°-rotated painting: rectified cleanly, corner markers in place.",
+    "date": 1793612386819
   },
   "intrinsicValue": 0,
   "cost": 1.5,

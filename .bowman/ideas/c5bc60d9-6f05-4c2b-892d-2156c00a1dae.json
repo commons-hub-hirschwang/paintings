@@ -1,7 +1,7 @@
 {
   "id": "c5bc60d9-6f05-4c2b-892d-2156c00a1dae",
-  "text": "Login for admins and evaluators",
-  "description": "Lightweight auth (e.g. magic link or Cloudflare Access) identifying each evaluator so ratings are attributed per person; capture tool restricted to admins.",
+  "text": "Admin login with manually shared credentials",
+  "description": "Only admins log in (evaluators = admins). Each admin gets a username/password shared manually — no emails. Credentials kept as Worker secrets/hashed config; per-admin identity so ratings are attributed per person.",
   "archived": false,
   "color": "#273961",
   "tags": [],

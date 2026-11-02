@@ -1,0 +1,2 @@
+# copy to .dev.vars — admins as name:password pairs (production: wrangler secret put ADMINS --env commons)
+ADMINS=felix:change-me

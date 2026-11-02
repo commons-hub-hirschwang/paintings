@@ -1,0 +1,28 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "art-commons-hub",
+	"compatibility_date": "2026-11-01",
+	"main": "server/index.ts",
+	"account_id": "05cb64c47a8cb62832b428eb832bea0c",
+	"assets": {
+		"not_found_handling": "single-page-application",
+		"run_worker_first": ["/api/*", "/img/*"]
+	},
+	"observability": {
+		"enabled": true
+	},
+	"upload_source_maps": true,
+	// local dev uses these (ids only matter remotely)
+	"d1_databases": [{ "binding": "DB", "database_name": "art-commons-hub", "database_id": "local", "migrations_dir": "migrations" }],
+	"r2_buckets": [{ "binding": "IMAGES", "bucket_name": "art-commons-hub-images" }],
+	"env": {
+		// Commons Hub's account: pnpm run deploy:commons
+		"commons": {
+			"name": "art",
+			"routes": [{ "pattern": "art.commons-hub.at", "custom_domain": true }],
+			// TODO: fill database_id after `wrangler d1 create art-commons-hub`
+			"d1_databases": [{ "binding": "DB", "database_name": "art-commons-hub", "database_id": "TODO", "migrations_dir": "migrations" }],
+			"r2_buckets": [{ "binding": "IMAGES", "bucket_name": "art-commons-hub-images" }]
+		}
+	}
+}

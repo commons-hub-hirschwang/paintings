@@ -1,0 +1,24 @@
+{
+  "id": "1b23f463-83b5-40c7-8026-742171a44df9",
+  "text": "Linux camera bridge: remote USB capture via gphoto2",
+  "description": "Local helper on the Linux laptop that triggers the tethered Sony Alpha 6400 (gphoto2 2.5.32: \"Sony ILCE-6400 (PC Control)\" — camera USB mode must be set to PC Remote) and pulls the full-res image straight into the capture flow — no touching the camera, so position stays fixed. Optional live view for framing. Fallback: Pixel 10a via browser upload. Open: capture UI local next to the bridge (recommended) vs. on the live site calling localhost.",
+  "archived": false,
+  "color": "#34326c",
+  "tags": [],
+  "supportingConnections": [],
+  "supportedIdeas": [
+    "ad5688bd-d88a-4128-8c41-00ea2bfc4429"
+  ],
+  "committedIn": [],
+  "status": {
+    "state": "partially",
+    "comment": "bridge/server.ts (Hono on Node, :5174, proxied at /bridge): /status, /capture (gphoto2), /upload (phone fallback), /raw, /process. Processing verified with synthetic photos; real camera capture not yet tested (A6400 needs USB mode PC Remote).",
+    "date": 1793612386977
+  },
+  "intrinsicValue": 0,
+  "cost": 1.5,
+  "selfWeight": 1,
+  "duration": 1,
+  "costVariance": 0,
+  "valueVariance": 0
+}

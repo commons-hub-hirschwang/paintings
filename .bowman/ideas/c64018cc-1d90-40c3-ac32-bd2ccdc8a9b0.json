@@ -1,0 +1,25 @@
+{
+  "id": "c64018cc-1d90-40c3-ac32-bd2ccdc8a9b0",
+  "text": "Image variants after rectification: archive, detail, normal, thumb",
+  "description": "From the rectified archive master (JPEG q90, private in R2 + local copy) derive web JPEGs, longest side capped, never upscaled: detail 2560/q80, normal 1280/q75, thumb 384/q70. Config in shared/image-variants.ts; its hash is stored per painting (variants_version), and `pnpm images:regen [--force]` regenerates outdated variants from the archive.",
+  "archived": false,
+  "color": "#303469",
+  "tags": [],
+  "supportingConnections": [],
+  "supportedIdeas": [
+    "ad5688bd-d88a-4128-8c41-00ea2bfc4429",
+    "f8aaafd1-4210-4462-996a-c8153536583c"
+  ],
+  "committedIn": [],
+  "status": {
+    "state": "implemented",
+    "comment": "Verified locally 2026-11-02: 1200x800 archive → detail/normal 1200x800 (no upscale), thumb 384x256; archive 404 on public /img; images:regen skipped up-to-date (0/2), regenerated one with an outdated variants_version (1/2), --force did 2/2.",
+    "date": 1793612386703
+  },
+  "intrinsicValue": 0,
+  "cost": 1,
+  "selfWeight": 1,
+  "duration": 1,
+  "costVariance": 0,
+  "valueVariance": 0
+}

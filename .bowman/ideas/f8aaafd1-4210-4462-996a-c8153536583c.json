@@ -39,6 +39,16 @@
       ],
       "weight": 1,
       "hypothesis": "Computed prices are what the shop displays and charges"
+    },
+    {
+      "ideaId": "c64018cc-1d90-40c3-ac32-bd2ccdc8a9b0",
+      "relativePosition": [
+        2.01,
+        -3.16
+      ],
+      "weight": 1,
+      "hypothesis": "Size-appropriate, compressed variants keep the grid and painting pages fast while the archive keeps full quality",
+      "reflection": "Held in local test: thumb ~2.8 KB vs. ~24 KB archive for a 1200x800 synthetic image; real page-speed effect untested until real paintings exist."
     }
   ],
   "supportedIdeas": [
