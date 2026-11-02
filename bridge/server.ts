@@ -54,18 +54,41 @@ app.get('/status', async (c) => {
 	})
 })
 
-// remote-trigger the tethered camera and download the JPEG
+// remote-trigger the tethered camera and download the JPEG. One capture at a time; a camera that does not
+// fire (asleep, no focus) is given up after 20 s instead of hanging for a minute.
+let capturing = false
+const CAPTURE_TIMEOUT = 20_000
+
+function captureError(error: { killed?: boolean; stderr?: string; message: string }) {
+	const output = error.stderr || error.message
+	if (error.killed) return 'camera did not take a picture within 20 s (waking up? no focus?) — press Capture again'
+	if (/Could not claim|resource busy/i.test(output))
+		return 'camera is busy: another program holds it. Run `pkill -f gvfs-gphoto2-volume-monitor` or replug the camera, then try again'
+	if (/No camera found|-105/i.test(output)) return 'no camera found — check USB cable and USB Connection = PC Remote'
+	return output.trim().split('\n').slice(-2).join(' | ')
+}
+
 app.post('/capture', async (c) => {
-	await ensureDirs()
-	const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..*/, '')
-	const { stdout, stderr } = await run('gphoto2', ['--capture-image-and-download', '--force-overwrite', '--filename', `${dirs.raw}/${stamp}.%C`])
-	const saved = [...stdout.matchAll(/Saving file as (\S+)/g)].map((m) => m[1]!)
-	const jpeg = saved.find((file) => /\.jpe?g$/i.test(file))
-	if (!jpeg) {
-		const hint = saved.length ? 'set the camera to JPEG' : 'camera did not take a picture (focus? asleep?) — try again'
-		return c.json({ error: `no JPEG captured: ${hint}. gphoto2: ${(stderr || stdout).trim().split('\n').slice(-3).join(' | ')}` }, 500)
+	if (capturing) return c.json({ error: 'a capture is already running' }, 409)
+	capturing = true
+	try {
+		await ensureDirs()
+		const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..*/, '')
+		const { stdout } = await run(
+			'gphoto2',
+			['--capture-image-and-download', '--force-overwrite', '--filename', `${dirs.raw}/${stamp}.%C`],
+			{ timeout: CAPTURE_TIMEOUT, killSignal: 'SIGKILL' },
+		)
+		const saved = [...stdout.matchAll(/Saving file as (\S+)/g)].map((m) => m[1]!)
+		const jpeg = saved.find((file) => /\.jpe?g$/i.test(file))
+		if (!jpeg)
+			return c.json({ error: saved.length ? 'no JPEG captured — set the camera to JPEG' : 'camera did not take a picture — press Capture again' }, 500)
+		return c.json({ file: basename(jpeg) })
+	} catch (error) {
+		return c.json({ error: captureError(error as { killed?: boolean; stderr?: string; message: string }) }, 500)
+	} finally {
+		capturing = false
 	}
-	return c.json({ file: basename(jpeg) })
 })
 
 // fallback: photo taken with a phone, uploaded from the browser
