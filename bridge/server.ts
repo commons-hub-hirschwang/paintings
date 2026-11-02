@@ -38,10 +38,13 @@ app.get('/status', async (c) => {
 app.post('/capture', async (c) => {
 	await ensureDirs()
 	const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..*/, '')
-	const { stdout } = await run('gphoto2', ['--capture-image-and-download', '--force-overwrite', '--filename', `${dirs.raw}/${stamp}.%C`])
+	const { stdout, stderr } = await run('gphoto2', ['--capture-image-and-download', '--force-overwrite', '--filename', `${dirs.raw}/${stamp}.%C`])
 	const saved = [...stdout.matchAll(/Saving file as (\S+)/g)].map((m) => m[1]!)
 	const jpeg = saved.find((file) => /\.jpe?g$/i.test(file))
-	if (!jpeg) return c.json({ error: `no JPEG captured (got ${saved.join(', ') || 'nothing'}) — set the camera to JPEG` }, 500)
+	if (!jpeg) {
+		const hint = saved.length ? 'set the camera to JPEG' : 'camera did not take a picture (focus? asleep?) — try again'
+		return c.json({ error: `no JPEG captured: ${hint}. gphoto2: ${(stderr || stdout).trim().split('\n').slice(-3).join(' | ')}` }, 500)
+	}
 	return c.json({ file: basename(jpeg) })
 })
 
