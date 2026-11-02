@@ -1,15 +1,9 @@
 import type { WebVariant } from '../shared/image-variants'
+import type { Painting } from '../shared/types'
 
-export type Painting = {
-	id: string
-	title: string
-	width_cm: number | null
-	height_cm: number | null
-	status: 'draft' | 'available' | 'reserved' | 'sold'
-	variants_version: string
-}
+export type { Painting }
 
-export const imageUrl = (painting: Painting, variant: WebVariant) =>
+export const imageUrl = (painting: Pick<Painting, 'id' | 'variants_version'>, variant: WebVariant) =>
 	`/img/${painting.id}/${variant}.jpg?v=${painting.variants_version}`
 
 export const fetchPaintings = async (): Promise<Painting[]> => (await fetch('/api/paintings')).json()

@@ -19,6 +19,21 @@ const heightCm = ref<number | ''>('')
 const busy = ref('')
 const error = ref('')
 const notice = ref('')
+const showSettings = ref(false)
+const settings = ref({ galleryUrl: '', uploadKey: '' })
+
+function openSettings() {
+	settings.value = { galleryUrl: status.value?.galleryUrl ?? '', uploadKey: '' }
+	showSettings.value = !showSettings.value
+}
+
+const saveSettings = () =>
+	run('Saving settings…', async () => {
+		await bridge.saveSettings(settings.value)
+		status.value = await bridge.status()
+		paintings.value = await bridge.paintings()
+		showSettings.value = false
+	})
 const paintings = ref<LocalPainting[]>([])
 
 async function run(label: string, task: () => Promise<void>) {
@@ -113,10 +128,27 @@ const cm = (value: number) => value.toFixed(1)
 				Camera: {{ status.cameras[0] ?? 'none detected' }} ·
 				{{ calibration ? `calibrated, ${calibration.pxPerCm.toFixed(2)} px/cm` : 'not calibrated' }} ·
 				{{ status.unsynced }} not synced to {{ status.galleryUrl }}
+				<span :class="status.connection.ok ? '' : 'error'">
+					({{ status.connection.ok ? `key "${status.connection.key}"` : status.hasUploadKey ? 'not reachable / key invalid' : 'no upload key' }})
+				</span>
 			</span>
+			<button @click="openSettings">Settings</button>
 			<button @click="refreshStatus">Refresh</button>
 			<button v-if="status" :disabled="!!busy || !status.unsynced" @click="sync">Sync {{ status.unsynced || '' }}</button>
 		</header>
+
+		<form v-if="showSettings" class="dialog" @submit.prevent="saveSettings">
+			<label>
+				Gallery URL
+				<input v-model="settings.galleryUrl" placeholder="https://art.commons-hub.at" required />
+			</label>
+			<label>
+				Upload key (create one under Admin → Upload keys)
+				<input v-model="settings.uploadKey" type="password" :placeholder="status?.hasUploadKey ? 'unchanged' : 'ach_…'" />
+			</label>
+			<button type="submit">Save</button>
+			<p v-if="status && !status.connection.ok" class="muted">{{ status.connection.error }}</p>
+		</form>
 
 		<p v-if="error" class="error">{{ error }}</p>
 		<p v-if="busy" class="muted">{{ busy }}</p>

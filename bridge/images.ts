@@ -24,5 +24,5 @@ export async function publishWebVariants(paintingId: string, archive: Buffer) {
 			headers: { 'content-type': 'image/jpeg' },
 		})
 	}
-	await api(`/paintings/${paintingId}`, { method: 'PATCH', ...json({ variants_version: webVariantsVersion }) })
+	await api(`/paintings/${paintingId}/variants-version`, { method: 'PUT', ...json({ variants_version: webVariantsVersion }) })
 }

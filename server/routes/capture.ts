@@ -1,0 +1,57 @@
+// Used by capture laptops (bridge sync, pnpm images:regen) with an upload key.
+import { Hono } from 'hono'
+import { imageKey, isWebVariant, type Variant } from '../../shared/image-variants'
+import type { Painting } from '../../shared/types'
+import { requireUploadKey, type Env } from '../auth'
+
+const capture = new Hono<Env>()
+capture.use(requireUploadKey)
+
+const variantParam = (name: string): Variant | null => (name === 'archive' || isWebVariant(name) ? name : null)
+
+capture.get('/me', (c) => c.json({ key: c.get('uploadKey') }))
+
+capture.get('/paintings', async (c) => {
+	const { results } = await c.env.DB.prepare(`SELECT id, title, variants_version FROM paintings ORDER BY created_at`).all<Painting>()
+	return c.json(results)
+})
+
+// id comes from the offline capture store; re-posting the same id updates it, so sync retries are safe
+capture.post('/paintings', async (c) => {
+	const body = await c.req.json<{ id: string; title?: string; width_cm?: number; height_cm?: number }>()
+	if (!body.id) return c.json({ error: 'id required' }, 400)
+	await c.env.DB.prepare(
+		`INSERT INTO paintings (id, title, width_cm, height_cm) VALUES (?, ?, ?, ?)
+		 ON CONFLICT (id) DO UPDATE SET title = excluded.title, width_cm = excluded.width_cm, height_cm = excluded.height_cm`,
+	)
+		.bind(body.id, body.title ?? '', body.width_cm ?? null, body.height_cm ?? null)
+		.run()
+	return c.json({ id: body.id }, 201)
+})
+
+capture.put('/paintings/:id/variants-version', async (c) => {
+	const { variants_version } = await c.req.json<{ variants_version: string }>()
+	const { meta } = await c.env.DB.prepare(`UPDATE paintings SET variants_version = ? WHERE id = ?`)
+		.bind(variants_version, c.req.param('id'))
+		.run()
+	return meta.changes ? c.json({ ok: true }) : c.notFound()
+})
+
+capture.put('/paintings/:id/images/:variant', async (c) => {
+	const variant = variantParam(c.req.param('variant'))
+	if (!variant) return c.notFound()
+	await c.env.IMAGES.put(imageKey(c.req.param('id'), variant), await c.req.arrayBuffer(), {
+		httpMetadata: { contentType: 'image/jpeg' },
+	})
+	return c.json({ ok: true })
+})
+
+capture.get('/paintings/:id/images/:variant', async (c) => {
+	const variant = variantParam(c.req.param('variant'))
+	if (!variant) return c.notFound()
+	const object = await c.env.IMAGES.get(imageKey(c.req.param('id'), variant))
+	if (!object) return c.notFound()
+	return new Response(object.body, { headers: { 'content-type': 'image/jpeg' } })
+})
+
+export default capture

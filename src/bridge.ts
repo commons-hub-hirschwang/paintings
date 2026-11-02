@@ -1,7 +1,14 @@
 // Client for the local capture bridge (pnpm bridge), reached via the Vite dev proxy.
 import type { Calibration, Quad } from '../shared/geometry'
 
-export type BridgeStatus = { cameras: string[]; calibration: Calibration | null; galleryUrl: string; unsynced: number }
+export type BridgeStatus = {
+	cameras: string[]
+	calibration: Calibration | null
+	galleryUrl: string
+	hasUploadKey: boolean
+	connection: { ok: true; key: string } | { ok: false; error: string }
+	unsynced: number
+}
 export type LocalPainting = { id: string; title: string; widthCm: number; heightCm: number; createdAt: number; isSynced: boolean }
 
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
@@ -24,6 +31,8 @@ export const bridge = {
 	capture: () => call<{ file: string }>('/capture', { method: 'POST' }),
 	upload: (file: File) => call<{ file: string }>('/upload', { method: 'POST', body: file }),
 	forgetCalibration: () => call('/calibration', { method: 'DELETE' }),
+	saveSettings: (settings: { galleryUrl: string; uploadKey: string }) =>
+		call('/settings', { ...json(settings), method: 'PUT' }),
 	process: (body: { file: string; quad: Quad; title: string; widthCm?: number; heightCm?: number }) =>
 		call<LocalPainting>('/process', json(body)),
 	paintings: () => call<LocalPainting[]>('/paintings'),

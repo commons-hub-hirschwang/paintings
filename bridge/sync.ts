@@ -1,12 +1,13 @@
 import { readFile } from 'node:fs/promises'
-import { api, galleryUrl, json } from './api'
+import { api, getSettings, json } from './api'
 import { publishWebVariants } from './images'
 import { listPaintings, paintingFile, writePainting } from './store'
 
-export const isSynced = (painting: { synced: string[] }) => painting.synced.includes(galleryUrl)
+export const isSynced = (painting: { synced: string[] }) => painting.synced.includes(getSettings().galleryUrl)
 
 // Upload all local paintings the gallery (GALLERY_URL) doesn't have yet. Idempotent: safe to rerun after failures.
 export async function syncAll(log: (line: string) => void = () => {}) {
+	const { galleryUrl } = getSettings()
 	const todo = (await listPaintings()).filter((p) => !isSynced(p))
 	const failed: { id: string; error: string }[] = []
 	for (const painting of todo) {

@@ -10,7 +10,7 @@ import { Hono } from 'hono'
 import { calibrate, estimateSizeCm, rectifiedSize, type Calibration, type Quad } from '../shared/geometry'
 import sharp from 'sharp'
 import { webVariants } from '../shared/image-variants'
-import { galleryUrl } from './api'
+import { checkConnection, getSettings, saveSettings } from './api'
 import { listPaintings, paintingFile, savePainting } from './store'
 import { isSynced, syncAll } from './sync'
 import { warpToRectangle } from './warp'
@@ -35,7 +35,15 @@ app.get('/status', async (c) => {
 	// output: header, dashes, then "Model   Port" lines
 	const cameras = stdout.split('\n').slice(2).map((line) => line.trim()).filter(Boolean)
 	const unsynced = (await listPaintings()).filter((p) => !isSynced(p)).length
-	return c.json({ cameras, calibration: await readCalibration(), galleryUrl, unsynced })
+	const { galleryUrl, uploadKey } = getSettings()
+	return c.json({
+		cameras,
+		calibration: await readCalibration(),
+		galleryUrl,
+		hasUploadKey: !!uploadKey,
+		connection: await checkConnection(),
+		unsynced,
+	})
 })
 
 // remote-trigger the tethered camera and download the JPEG
@@ -117,9 +125,16 @@ app.get('/paintings/:id/thumb.jpg', async (c) => {
 	return c.body(new Uint8Array(await readFile(file)), 200, { 'content-type': 'image/jpeg' })
 })
 
-// upload everything not yet in GALLERY_URL
+// gallery URL + upload key, edited in the capture UI (empty key = keep the current one)
+app.put('/settings', async (c) => {
+	const { galleryUrl, uploadKey } = await c.req.json<{ galleryUrl?: string; uploadKey?: string }>()
+	await saveSettings({ ...(galleryUrl ? { galleryUrl } : {}), ...(uploadKey ? { uploadKey } : {}) })
+	return c.json({ ok: true })
+})
+
+// upload everything the configured gallery doesn't have yet
 app.post('/sync', async (c) => c.json(await syncAll(console.log)))
 
 const port = 5174
 serve({ fetch: app.fetch, port })
-console.log(`bridge on http://localhost:${port}, syncs to ${galleryUrl}`)
+console.log(`bridge on http://localhost:${port}, syncs to ${getSettings().galleryUrl}`)

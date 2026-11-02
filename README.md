@@ -16,8 +16,8 @@ Ideas and their status: `.bowman/` (Aimparency).
 ## Development
 
 ```sh
-cp .dev.vars.example .dev.vars   # admins for the local Worker
-cp .env.example .env.local       # bridge/scripts → which gallery + admin login
+cp .dev.vars.example .dev.vars   # website users (name:password[:role]) for the local Worker
+cp .env.example .env.local       # bridge/scripts fallback (normally set in the capture UI)
 pnpm db:migrate                  # local D1
 pnpm dev                         # app + Worker on :5173
 pnpm bridge                      # capture bridge on :5174 (proxied at /bridge)
@@ -51,7 +51,7 @@ pnpm images:regen           # paintings whose variants are outdated (config vers
 pnpm images:regen --force   # all
 ```
 
-Point `GALLERY_URL` in `.env.local` at `https://art.commons-hub.at` to regenerate production.
+Regeneration uses the gallery URL + upload key from the capture settings (`captures/settings.json`).
 
 ## Deploy (Commons Hub Cloudflare account)
 
@@ -61,7 +61,7 @@ One-time setup:
 pnpm wrangler d1 create art-commons-hub          # put the id into wrangler.jsonc env.commons
 pnpm wrangler r2 bucket create art-commons-hub-images
 pnpm db:migrate:commons
-pnpm wrangler secret put ADMINS --env commons    # "name:password,name:password"
+pnpm wrangler secret put USERS --env commons     # "name:password[:role],…" role: admin | rater
 ```
 
 Then `pnpm deploy:commons`.

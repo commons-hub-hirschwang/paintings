@@ -1,18 +1,31 @@
-// Admin API client for the bridge and scripts. Config in .env.local:
-//   GALLERY_URL=http://localhost:5173   (or https://art.commons-hub.at)
-//   ADMIN_USER=felix
-//   ADMIN_PASSWORD=...
-import { existsSync } from 'node:fs'
+// Capture API client for the bridge and scripts. Settings (gallery URL + upload key) are edited in the capture
+// UI and stored in captures/settings.json; GALLERY_URL / UPLOAD_KEY in .env.local are the fallback.
+import { existsSync, readFileSync } from 'node:fs'
+import { mkdir, writeFile } from 'node:fs/promises'
 
 if (existsSync('.env.local')) process.loadEnvFile('.env.local')
 
-export const galleryUrl = process.env.GALLERY_URL ?? 'http://localhost:5173'
-const authorization = 'Basic ' + Buffer.from(`${process.env.ADMIN_USER}:${process.env.ADMIN_PASSWORD}`).toString('base64')
+export type Settings = { galleryUrl: string; uploadKey: string }
+const settingsFile = 'captures/settings.json'
+
+export function getSettings(): Settings {
+	const stored: Partial<Settings> = existsSync(settingsFile) ? JSON.parse(readFileSync(settingsFile, 'utf8')) : {}
+	return {
+		galleryUrl: (stored.galleryUrl ?? process.env.GALLERY_URL ?? 'http://localhost:5173').replace(/\/+$/, ''),
+		uploadKey: stored.uploadKey ?? process.env.UPLOAD_KEY ?? '',
+	}
+}
+
+export async function saveSettings(settings: Partial<Settings>) {
+	await mkdir('captures', { recursive: true })
+	await writeFile(settingsFile, JSON.stringify({ ...getSettings(), ...settings }, null, '\t'))
+}
 
 export async function api(path: string, init: RequestInit = {}) {
-	const response = await fetch(`${galleryUrl}/api/admin${path}`, {
+	const { galleryUrl, uploadKey } = getSettings()
+	const response = await fetch(`${galleryUrl}/api/capture${path}`, {
 		...init,
-		headers: { authorization, ...init.headers },
+		headers: { authorization: `Bearer ${uploadKey}`, ...init.headers },
 	})
 	if (!response.ok) throw new Error(`${init.method ?? 'GET'} ${path}: ${response.status} ${await response.text()}`)
 	return response
@@ -22,3 +35,13 @@ export const json = (body: unknown): RequestInit => ({
 	body: JSON.stringify(body),
 	headers: { 'content-type': 'application/json' },
 })
+
+// checks URL + key; returns the key's name
+export async function checkConnection(): Promise<{ ok: true; key: string } | { ok: false; error: string }> {
+	try {
+		const { key } = (await (await api('/me')).json()) as { key: string }
+		return { ok: true, key }
+	} catch (error) {
+		return { ok: false, error: (error as Error).message }
+	}
+}
