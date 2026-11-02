@@ -1,0 +1,32 @@
+{
+  "id": "1a3df8d5-8405-46ff-b2dc-f7830497420d",
+  "text": "Offer painting digitalization (+ gallery/shop) to other clients' collections",
+  "description": "Reuse the capture tool and website for other people's collections: one capture project per client, each synced to its own gallery deployment.",
+  "archived": false,
+  "color": "#666666",
+  "tags": [],
+  "supportingConnections": [
+    {
+      "ideaId": "1c445b1a-6bb4-4958-adc2-b7edddb21ec1",
+      "relativePosition": [
+        -0.36,
+        3.73
+      ],
+      "weight": 1,
+      "hypothesis": "Per-client projects in the capture tool make serving multiple collections practical"
+    }
+  ],
+  "supportedIdeas": [],
+  "committedIn": [],
+  "status": {
+    "state": "open",
+    "comment": "",
+    "date": 1793630345305
+  },
+  "intrinsicValue": 0,
+  "cost": 3,
+  "selfWeight": 1,
+  "duration": 1,
+  "costVariance": 0,
+  "valueVariance": 0
+}

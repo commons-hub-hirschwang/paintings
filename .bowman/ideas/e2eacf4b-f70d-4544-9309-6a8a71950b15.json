@@ -1,7 +1,7 @@
 {
   "id": "e2eacf4b-f70d-4544-9309-6a8a71950b15",
   "text": "Single web app: public shop + authenticated admin/evaluator area",
-  "description": "One codebase/deployment at art.commons-hub.at (Cloudflare, Commons Hub account, wrangler env \"commons\"). Proposed: Vue (Vite) frontend + Worker API (Hono, Express-like) + D1 (SQLite) for paintings/ratings + R2 for images. Avoids using the single Supabase free DB.",
+  "description": "One codebase/deployment at paintings.commons-hub.at (Cloudflare, Commons Hub account, `pnpm deploy:commons`): Vue (Vite) + Hono Worker + D1 (paintings, ratings, upload keys) + R2 (images).",
   "archived": false,
   "color": "#2d4066",
   "tags": [],
@@ -20,9 +20,9 @@
   ],
   "committedIn": [],
   "status": {
-    "state": "partially",
-    "comment": "Scaffolded: Vue + Hono Worker + D1 (paintings, ratings) + R2, basic-auth admin from ADMINS secret. Runs locally. Not yet deployed: needs D1/R2 created in the Commons Hub account.",
-    "date": 1793612387071
+    "state": "implemented",
+    "comment": "Deployed 2026-11-02 to https://paintings.commons-hub.at (D1 'paintings', R2 'paintings-images'). Pending human steps: set USERS secret; optionally delete stray empty bucket art-commons-hub-images.",
+    "date": 1793630353713
   },
   "intrinsicValue": 0,
   "cost": 2,

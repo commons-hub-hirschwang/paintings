@@ -1,0 +1,25 @@
+{
+  "id": "1c445b1a-6bb4-4958-adc2-b7edddb21ec1",
+  "text": "Projects in the local capture tool: create, switch, load",
+  "description": "Each project has its own folder (captures/<project>/: raw photos, paintings, calibration, settings incl. gallery URL + upload key). Start screen: create/open project. Current test photos become a \"test\" project; the real digitalization of the attic paintings starts as a fresh project; later client collections get their own projects (possibly their own gallery deployments).",
+  "archived": false,
+  "color": "#2e2a61",
+  "tags": [],
+  "supportingConnections": [],
+  "supportedIdeas": [
+    "ad5688bd-d88a-4128-8c41-00ea2bfc4429",
+    "1a3df8d5-8405-46ff-b2dc-f7830497420d"
+  ],
+  "committedIn": [],
+  "status": {
+    "state": "open",
+    "comment": "",
+    "date": 1793630345116
+  },
+  "intrinsicValue": 0,
+  "cost": 2,
+  "selfWeight": 1,
+  "duration": 1,
+  "costVariance": 0,
+  "valueVariance": 0
+}

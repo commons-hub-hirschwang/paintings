@@ -1,0 +1,24 @@
+{
+  "id": "f3c45e33-03c3-4d63-acbb-8bab83236af8",
+  "text": "Standalone local capture tool: `pnpm capture` serves UI + bridge on localhost",
+  "description": "Move the capture UI out of the website into its own small app served by the bridge (one process, http://localhost:5174, Vite middleware in dev). Remove /capture from the website build. Upload target (gallery URL) + upload key are set in the capture UI settings (already exists); keys come from the deployed site's Admin → Upload keys (already exists). Reuses shared/ (geometry, image variants) and CornerEditor.",
+  "archived": false,
+  "color": "#362e68",
+  "tags": [],
+  "supportingConnections": [],
+  "supportedIdeas": [
+    "ad5688bd-d88a-4128-8c41-00ea2bfc4429"
+  ],
+  "committedIn": [],
+  "status": {
+    "state": "open",
+    "comment": "",
+    "date": 1793630344927
+  },
+  "intrinsicValue": 0,
+  "cost": 2,
+  "selfWeight": 1,
+  "duration": 1,
+  "costVariance": 0,
+  "valueVariance": 0
+}
