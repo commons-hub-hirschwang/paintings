@@ -33,6 +33,11 @@ async function rate(score: number) {
 	}
 }
 
+function select(id: string) {
+	currentId.value = id
+	window.scrollTo({ top: 0 })
+}
+
 // keys 1–9, 0 = 10
 function onKey(event: KeyboardEvent) {
 	if (!current.value || event.target instanceof HTMLInputElement) return
@@ -52,23 +57,23 @@ const size = (p: RatePainting) => `${p.width_cm} × ${p.height_cm} cm`
 				Rate the <strong>aesthetics only</strong>, 1 (weak) to 10 (outstanding). Size does not matter here — it is applied as
 				a separate factor in the price.
 			</p>
-			<p v-if="error" class="error">{{ error }}</p>
-
+			<!-- buttons first, so they stay in the same place for every painting -->
 			<section v-if="current" class="current">
+				<div class="scores">
+					<button v-for="score in 10" :key="score" :class="{ chosen: current.my_score === score }" @click="rate(score)">
+						{{ score }}
+					</button>
+				</div>
+				<p class="info">
+					<strong>{{ current.title || 'Untitled' }}</strong>
+					<span class="muted">· {{ size(current) }} · keys 1–9, 0 = 10 · click image for detail</span>
+				</p>
+				<p v-if="error" class="error">{{ error }}</p>
 				<a :href="imageUrl(current, 'detail')" target="_blank">
 					<img :src="imageUrl(current, 'normal')" :alt="current.title" />
 				</a>
-				<div class="panel">
-					<h2>{{ current.title || 'Untitled' }}</h2>
-					<p class="muted">{{ size(current) }} · your rating: {{ current.my_score ?? '–' }}</p>
-					<div class="scores">
-						<button v-for="score in 10" :key="score" :class="{ chosen: current.my_score === score }" @click="rate(score)">
-							{{ score }}
-						</button>
-					</div>
-					<p class="muted">Keys 1–9, 0 = 10. Click the image for full detail.</p>
-				</div>
 			</section>
+			<p v-else-if="error" class="error">{{ error }}</p>
 			<p v-else-if="paintings.length">All {{ paintings.length }} paintings rated — thank you! Click one to change your rating.</p>
 			<p v-else class="muted">No paintings to rate yet.</p>
 
@@ -79,7 +84,7 @@ const size = (p: RatePainting) => `${p.width_cm} × ${p.height_cm} cm`
 						v-for="painting in group.list"
 						:key="painting.id"
 						:class="{ active: painting.id === currentId }"
-						@click="currentId = painting.id"
+						@click="select(painting.id)"
 					>
 						<img :src="imageUrl(painting, 'thumb')" :alt="painting.title" loading="lazy" />
 						<figcaption>
@@ -101,26 +106,34 @@ const size = (p: RatePainting) => `${p.width_cm} × ${p.height_cm} cm`
 
 	& .current {
 		display: flex;
-		flex-wrap: wrap;
+		flex-direction: column;
+		align-items: center;
 		gap: var(--gap);
+		text-align: center;
 
-		& img {
+		& .info {
+			margin: 0;
 			max-width: 100%;
-			max-height: 70vh;
+			white-space: nowrap;
+			overflow: hidden;
+			text-overflow: ellipsis;
 		}
 
-		& .panel {
-			flex: 1 1 16rem;
+		& img {
+			display: block;
+			max-width: 100%;
+			max-height: 70vh;
 		}
 	}
 
 	& .scores {
-		display: grid;
-		grid-template-columns: repeat(5, 3rem);
-		gap: 0.5rem;
+		display: flex;
+		justify-content: center;
+		gap: 0.4rem;
 
 		& button {
-			aspect-ratio: 1;
+			width: 2.6rem;
+			padding: 0.4rem 0;
 
 			&.chosen {
 				background: var(--fg);
