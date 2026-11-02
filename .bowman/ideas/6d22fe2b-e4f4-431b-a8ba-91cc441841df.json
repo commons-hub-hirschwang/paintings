@@ -11,9 +11,9 @@
   ],
   "committedIn": [],
   "status": {
-    "state": "open",
-    "comment": "",
-    "date": 1793609517156
+    "state": "human-dependent",
+    "comment": "Built + deployed (server/routes/shop.ts, REST, no SDK). Webhook signature verified locally (bad sig 400, completed → sold). Needs STRIPE_SECRET_KEY + STRIPE_WEBHOOK_SECRET secrets and a webhook endpoint in Stripe.",
+    "date": 1793631250297
   },
   "intrinsicValue": 0,
   "cost": 1.5,

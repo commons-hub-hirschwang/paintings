@@ -11,9 +11,9 @@
   ],
   "committedIn": [],
   "status": {
-    "state": "open",
-    "comment": "Research deferred by user (2026-11-02).",
-    "date": 1793609517075
+    "state": "partially",
+    "comment": "Built: pick-up 0 € + tiers by width+height in shared/shipping.ts (PLACEHOLDER prices, AT+neighbours). Carrier research still open.",
+    "date": 1793631250124
   },
   "intrinsicValue": 0,
   "cost": 1.5,

@@ -11,9 +11,9 @@
   ],
   "committedIn": [],
   "status": {
-    "state": "open",
-    "comment": "",
-    "date": 1793609517227
+    "state": "implemented",
+    "comment": "Atomic reserve on checkout (UPDATE … WHERE status='available'), webhook completed → sold, expired (30 min) → available; admin status select.",
+    "date": 1793631250469
   },
   "intrinsicValue": 0,
   "cost": 0.5,

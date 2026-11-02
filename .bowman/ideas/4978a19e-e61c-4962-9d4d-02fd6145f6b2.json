@@ -31,9 +31,9 @@
   ],
   "committedIn": [],
   "status": {
-    "state": "open",
-    "comment": "",
-    "date": 1793609458300
+    "state": "implemented",
+    "comment": "shared/pricing.ts: 600 €/m² at rating 5, area^0.8, (rating/5)^1.5, min 80, round 10. Public API returns price only (rating private). Verified locally (46×48 cm → 360 €). Numbers need owner review.",
+    "date": 1793631249966
   },
   "intrinsicValue": 0,
   "cost": 1,
