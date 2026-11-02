@@ -1,4 +1,5 @@
 import { Hono } from 'hono'
+import { price } from '../../shared/pricing'
 import { paintingStatuses, type AdminPainting, type Painting, type UploadKey } from '../../shared/types'
 import { requireRole, sha256, type Env } from '../auth'
 
@@ -11,7 +12,7 @@ admin.get('/paintings', async (c) => {
 		 FROM paintings p LEFT JOIN ratings r ON r.painting_id = p.id
 		 GROUP BY p.id ORDER BY p.created_at`,
 	).all<AdminPainting>()
-	return c.json(results)
+	return c.json(results.map((p) => ({ ...p, price: price(p.width_cm, p.height_cm, p.rating) })))
 })
 
 admin.patch('/paintings/:id', async (c) => {

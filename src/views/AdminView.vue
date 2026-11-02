@@ -57,6 +57,7 @@ const date = (seconds: number | null) => (seconds ? new Date(seconds * 1000).toL
 						<th>Title</th>
 						<th>Size (cm)</th>
 						<th>Rating</th>
+						<th>Price</th>
 						<th>Status</th>
 					</tr>
 					<tr v-for="painting in paintings" :key="painting.id">
@@ -69,6 +70,7 @@ const date = (seconds: number | null) => (seconds ? new Date(seconds * 1000).toL
 							{{ painting.rating?.toFixed(1) ?? '–' }}
 							<span class="muted">({{ painting.ratings }})</span>
 						</td>
+						<td>{{ painting.price ? `${painting.price} €` : '–' }}</td>
 						<td>
 							<select :value="painting.status" @change="setStatus(painting, ($event.target as HTMLSelectElement).value as PaintingStatus)">
 								<option v-for="status in paintingStatuses" :key="status">{{ status }}</option>

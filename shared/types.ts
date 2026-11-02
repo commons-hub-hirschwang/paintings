@@ -14,8 +14,10 @@ export type Painting = {
 export type Role = 'admin' | 'rater'
 export type User = { name: string; role: Role }
 
-// admin list: with averaged aesthetic rating
-export type AdminPainting = Painting & { rating: number | null; ratings: number }
+// public: with computed price (rating itself stays private)
+export type PublicPainting = Painting & { price: number | null }
+// admin list: with averaged aesthetic rating and price
+export type AdminPainting = PublicPainting & { rating: number | null; ratings: number }
 // rating list: with the current user's score
 export type RatePainting = Painting & { my_score: number | null }
 

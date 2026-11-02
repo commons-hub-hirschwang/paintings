@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import { imageKey, isWebVariant } from '../shared/image-variants'
-import type { Painting } from '../shared/types'
+import { price } from '../shared/pricing'
+import type { PublicPainting } from '../shared/types'
 import { currentUser, login, logout, type Env } from './auth'
 import admin from './routes/admin'
 import capture from './routes/capture'
@@ -10,22 +11,26 @@ const app = new Hono<Env>()
 
 // ---------- public ----------
 
+const publicSelect = `SELECT p.id, p.title, p.width_cm, p.height_cm, p.status, p.variants_version, p.created_at,
+	(SELECT AVG(score) FROM ratings WHERE painting_id = p.id) AS rating
+	FROM paintings p WHERE p.status != 'draft' AND p.variants_version IS NOT NULL`
+
+// price from rating × size (shared/pricing.ts); the rating itself is not published
+const withPrice = ({ rating, ...p }: PublicPainting & { rating: number | null }): PublicPainting => ({
+	...p,
+	price: price(p.width_cm, p.height_cm, rating),
+})
+
 app.get('/api/paintings', async (c) => {
-	const { results } = await c.env.DB.prepare(
-		`SELECT id, title, width_cm, height_cm, status, variants_version FROM paintings
-		 WHERE status != 'draft' AND variants_version IS NOT NULL ORDER BY created_at`,
-	).all<Painting>()
-	return c.json(results)
+	const { results } = await c.env.DB.prepare(`${publicSelect} ORDER BY p.created_at`).all<PublicPainting & { rating: number | null }>()
+	return c.json(results.map(withPrice))
 })
 
 app.get('/api/paintings/:id', async (c) => {
-	const painting = await c.env.DB.prepare(
-		`SELECT id, title, width_cm, height_cm, status, variants_version FROM paintings
-		 WHERE id = ? AND status != 'draft'`,
-	)
+	const painting = await c.env.DB.prepare(`${publicSelect} AND p.id = ?`)
 		.bind(c.req.param('id'))
-		.first<Painting>()
-	return painting ? c.json(painting) : c.notFound()
+		.first<PublicPainting & { rating: number | null }>()
+	return painting ? c.json(withPrice(painting)) : c.notFound()
 })
 
 // web variants only; URLs carry ?v=<variants_version>, so they can be cached forever
