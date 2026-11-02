@@ -11,9 +11,9 @@
   ],
   "committedIn": [],
   "status": {
-    "state": "partially",
-    "comment": "/rate: 1–10 buttons + keys 1–9/0, 'aesthetics only' note, API validates 1–10 (verified). Browser check pending.",
-    "date": 1793624094955
+    "state": "implemented",
+    "comment": "Fullscreen overlay, vertical 10→1 buttons at 2/3 width, keys 1–9/0, Esc; verified headless and used by the user.",
+    "date": 1793653287395
   },
   "intrinsicValue": 0,
   "cost": 1,

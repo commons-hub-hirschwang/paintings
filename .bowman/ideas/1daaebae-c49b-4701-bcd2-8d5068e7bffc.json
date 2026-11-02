@@ -1,7 +1,7 @@
 {
   "id": "1daaebae-c49b-4701-bcd2-8d5068e7bffc",
   "text": "Stripe checkout for buying a painting",
-  "description": "Two options at checkout. Shipping price tiers by painting dimensions (incl. packaging/girth limits). Paintings are located in Austria → research Österreichische Post / DPD / GLS AT rates (domestic + EU), size limits for large flat items, Sperrgut surcharges, art-shipping services for oversize, insurance. Tiers kept in config.",
+  "description": "Stripe Checkout session per painting incl. chosen shipping option; webhook marks the painting as sold.",
   "archived": false,
   "color": "#466128",
   "tags": [],
@@ -11,9 +11,9 @@
   ],
   "committedIn": [],
   "status": {
-    "state": "partially",
-    "comment": "Built: pick-up 0 € + tiers by width+height in shared/shipping.ts (PLACEHOLDER prices, AT+neighbours). Carrier research still open.",
-    "date": 1793631250124
+    "state": "human-dependent",
+    "comment": "Built + deployed (server/routes/shop.ts, REST, no SDK); paused by user. Webhook signature verified locally (bad sig 400, completed → sold). Needs STRIPE_SECRET_KEY + STRIPE_WEBHOOK_SECRET and a webhook endpoint in Stripe.",
+    "date": 1793653286727
   },
   "intrinsicValue": 0,
   "cost": 1.5,

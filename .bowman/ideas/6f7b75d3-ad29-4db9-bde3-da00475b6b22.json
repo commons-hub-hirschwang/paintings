@@ -11,9 +11,9 @@
   ],
   "committedIn": [],
   "status": {
-    "state": "partially",
-    "comment": "/rate: 'Not rated yet' and 'Rated' lists per user. Built; browser check pending.",
-    "date": 1793624094885
+    "state": "implemented",
+    "comment": "/rate lists 'Not rated yet' / 'Rated'; rating jumps to next unrated. Verified headless.",
+    "date": 1793653287525
   },
   "intrinsicValue": 0,
   "cost": 0.5,

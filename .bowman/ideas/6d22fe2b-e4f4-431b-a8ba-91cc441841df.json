@@ -1,7 +1,7 @@
 {
   "id": "6d22fe2b-e4f4-431b-a8ba-91cc441841df",
   "text": "Shipping options: pick-up (0 €) or size-dependent shipping",
-  "description": "Two options at checkout. Shipping price tiers by painting dimensions (incl. packaging/girth limits). Needs research: DHL/DPD/GLS/Hermes parcel size limits and prices for large flat items, Sperrgut surcharges, art-shipping services for oversize, insurance. Tiers kept in config.",
+  "description": "Two options at checkout: pick-up (0 €) or shipping priced by painting size. Paintings are in Austria → research Österreichische Post / DPD / GLS rates (AT + EU), size limits for large flat items, bulky surcharges, art shipping for oversize, insurance. Tiers in shared/shipping.ts.",
   "archived": false,
   "color": "#566730",
   "tags": [],
@@ -11,9 +11,9 @@
   ],
   "committedIn": [],
   "status": {
-    "state": "human-dependent",
-    "comment": "Built + deployed (server/routes/shop.ts, REST, no SDK). Webhook signature verified locally (bad sig 400, completed → sold). Needs STRIPE_SECRET_KEY + STRIPE_WEBHOOK_SECRET secrets and a webhook endpoint in Stripe.",
-    "date": 1793631250297
+    "state": "partially",
+    "comment": "Built: pick-up + tiers by width+height in shared/shipping.ts with PLACEHOLDER prices. Carrier research open (deferred by user).",
+    "date": 1793653287197
   },
   "intrinsicValue": 0,
   "cost": 1.5,
