@@ -15,12 +15,17 @@ import { warpToRectangle } from './warp'
 const run = promisify(execFile)
 const dirs = { raw: 'captures/raw', archive: 'captures/archive' }
 const calibrationFile = 'captures/calibration.json'
-for (const dir of Object.values(dirs)) await mkdir(dir, { recursive: true })
+// created before every write, so deleting captures/ while the bridge runs is harmless
+const ensureDirs = () => Promise.all(Object.values(dirs).map((dir) => mkdir(dir, { recursive: true })))
 
 const readCalibration = async (): Promise<Calibration | null> =>
 	existsSync(calibrationFile) ? JSON.parse(await readFile(calibrationFile, 'utf8')) : null
 
 const app = new Hono()
+app.onError((error, c) => {
+	console.error(error)
+	return c.json({ error: error.message }, 500)
+})
 
 app.get('/status', async (c) => {
 	const { stdout } = await run('gphoto2', ['--auto-detect']).catch(() => ({ stdout: '' }))
@@ -31,6 +36,7 @@ app.get('/status', async (c) => {
 
 // remote-trigger the tethered camera and download the JPEG
 app.post('/capture', async (c) => {
+	await ensureDirs()
 	const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..*/, '')
 	const { stdout } = await run('gphoto2', ['--capture-image-and-download', '--force-overwrite', '--filename', `${dirs.raw}/${stamp}.%C`])
 	const saved = [...stdout.matchAll(/Saving file as (\S+)/g)].map((m) => m[1]!)
@@ -41,6 +47,7 @@ app.post('/capture', async (c) => {
 
 // fallback: photo taken with a phone, uploaded from the browser
 app.post('/upload', async (c) => {
+	await ensureDirs()
 	const file = `${Date.now()}.jpg`
 	await writeFile(join(dirs.raw, file), new Uint8Array(await c.req.arrayBuffer()))
 	return c.json({ file })
@@ -60,6 +67,7 @@ app.delete('/calibration', async (c) => {
 
 // corners selected → rectify, archive, create painting, publish web variants
 app.post('/process', async (c) => {
+	await ensureDirs()
 	const body = await c.req.json<{ file: string; quad: Quad; title: string; widthCm?: number; heightCm?: number }>()
 	let calibration = await readCalibration()
 	let size: { widthCm: number; heightCm: number }

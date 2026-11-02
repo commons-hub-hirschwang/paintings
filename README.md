@@ -25,7 +25,8 @@ pnpm bridge                      # capture bridge on :5174 (proxied at /bridge)
 
 ## Capture
 
-Camera: Sony α6400 via USB, set **USB Connection → PC Remote** and **file format JPEG**.
+Camera: Sony α6400 via USB. Menu: **Network → Ctrl w/ Smartphone → Off** (otherwise USB Connection is greyed out),
+**Setup → USB Connection → PC Remote**, and file format **JPEG**.
 Check with `gphoto2 --auto-detect`. If the camera is "busy", the desktop's gvfs automounter
 grabbed it: `pkill -f gvfs-gphoto2-volume-monitor`.
 

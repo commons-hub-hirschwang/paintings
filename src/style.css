@@ -37,3 +37,70 @@ a {
 .muted {
 	color: var(--muted);
 }
+
+h1,
+h2 {
+	margin: 0;
+	font-size: 1.25rem;
+}
+
+button,
+.button,
+input {
+	font: inherit;
+	color: inherit;
+	padding: 0.4rem 0.8rem;
+	border: 1px solid var(--muted);
+	border-radius: 0.3rem;
+	background: transparent;
+}
+
+button,
+.button {
+	cursor: pointer;
+
+	&:hover:not(:disabled) {
+		border-color: var(--fg);
+	}
+
+	&:disabled {
+		opacity: 0.4;
+		cursor: default;
+	}
+}
+
+label:has(input:not([hidden])) {
+	display: flex;
+	flex-direction: column;
+	gap: 0.2rem;
+}
+
+.actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--gap);
+}
+
+.error {
+	color: #d33;
+}
+
+.warning {
+	padding: var(--gap);
+	border-left: 3px solid #e9a400;
+}
+
+.dialog {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: var(--gap);
+	padding: var(--gap);
+	border: 1px solid var(--muted);
+	border-radius: 0.3rem;
+
+	& p {
+		flex-basis: 100%;
+		margin: 0;
+	}
+}
