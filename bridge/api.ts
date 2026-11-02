@@ -10,10 +10,19 @@ export type Settings = { galleryUrl: string; uploadKey: string }
 // per project: each project can sync to its own gallery
 const settingsFile = () => projectPath('settings.json')
 
+// any URL on the site works (e.g. …/admin): only the origin is used
+const origin = (url: string) => {
+	try {
+		return new URL(url).origin
+	} catch {
+		return url.replace(/\/+$/, '')
+	}
+}
+
 export function getSettings(): Settings {
 	const stored: Partial<Settings> = existsSync(settingsFile()) ? JSON.parse(readFileSync(settingsFile(), 'utf8')) : {}
 	return {
-		galleryUrl: (stored.galleryUrl ?? process.env.GALLERY_URL ?? 'http://localhost:5173').replace(/\/+$/, ''),
+		galleryUrl: origin(stored.galleryUrl ?? process.env.GALLERY_URL ?? 'http://localhost:5173'),
 		uploadKey: stored.uploadKey ?? process.env.UPLOAD_KEY ?? '',
 	}
 }

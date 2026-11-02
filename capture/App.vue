@@ -144,29 +144,11 @@ const cm = (value: number) => value.toFixed(1)
 			</form>
 			<span v-if="status?.project" class="muted">
 				Camera: {{ status.cameras[0] ?? 'none detected' }} ·
-				{{ calibration ? `calibrated, ${calibration.pxPerCm.toFixed(2)} px/cm` : 'not calibrated' }} ·
-				{{ status.unsynced }} not synced to {{ status.galleryUrl }}
-				<span :class="status.connection.ok ? '' : 'error'">
-					({{ status.connection.ok ? `key "${status.connection.key}"` : status.hasUploadKey ? 'not reachable / key invalid' : 'no upload key' }})
-				</span>
+				{{ calibration ? `calibrated, ${calibration.pxPerCm.toFixed(2)} px/cm` : 'not calibrated' }}
 			</span>
-			<button v-if="status?.project" @click="openSettings">Settings</button>
 			<button @click="refreshStatus">Refresh</button>
-			<button v-if="status?.project" :disabled="!!busy || !status.unsynced" @click="sync">Sync {{ status.unsynced || '' }}</button>
 		</header>
 
-		<form v-if="showSettings" class="dialog" @submit.prevent="saveSettings">
-			<label>
-				Gallery URL
-				<input v-model="settings.galleryUrl" placeholder="https://art.commons-hub.at" required />
-			</label>
-			<label>
-				Upload key (create one under Admin → Upload keys)
-				<input v-model="settings.uploadKey" type="password" :placeholder="status?.hasUploadKey ? 'unchanged' : 'ach_…'" />
-			</label>
-			<button type="submit">Save</button>
-			<p v-if="status && !status.connection.ok" class="muted">{{ status.connection.error }}</p>
-		</form>
 
 		<p v-if="error" class="error">{{ error }}</p>
 		<p v-if="busy" class="muted">{{ busy }}</p>
@@ -235,6 +217,33 @@ const cm = (value: number) => value.toFixed(1)
 					</figcaption>
 				</figure>
 			</section>
+
+			<!-- sync to the website: below the captured paintings -->
+			<section class="sync">
+				<h2>Sync</h2>
+				<p class="muted">
+					{{ status.unsynced }} not synced to {{ status.galleryUrl }}
+					<span :class="status.connection.ok ? '' : 'error'">
+						({{ status.connection.ok ? `key "${status.connection.key}"` : status.hasUploadKey ? 'not reachable / key invalid' : 'no upload key' }})
+					</span>
+				</p>
+				<div class="actions">
+					<button :disabled="!!busy || !status.unsynced" @click="sync">Sync {{ status.unsynced || '' }}</button>
+					<button @click="openSettings">Settings</button>
+				</div>
+			<form v-if="showSettings" class="dialog" @submit.prevent="saveSettings">
+			<label>
+				Gallery URL
+				<input v-model="settings.galleryUrl" placeholder="https://paintings.commons-hub.at" required />
+			</label>
+			<label>
+				Upload key (create one under Admin → Upload keys)
+				<input v-model="settings.uploadKey" type="password" :placeholder="status?.hasUploadKey ? 'unchanged' : 'ach_…'" />
+			</label>
+			<button type="submit">Save</button>
+			<p v-if="status && !status.connection.ok" class="muted">{{ status.connection.error }}</p>
+		</form>
+			</section>
 		</template>
 	</main>
 </template>
@@ -268,6 +277,12 @@ const cm = (value: number) => value.toFixed(1)
 
 	& .size {
 		display: flex;
+		gap: var(--gap);
+	}
+
+	& .sync {
+		display: flex;
+		flex-direction: column;
 		gap: var(--gap);
 	}
 

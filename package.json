@@ -15,7 +15,7 @@
     "db:migrate": "wrangler d1 migrations apply DB --local",
     "db:migrate:commons": "wrangler d1 migrations apply DB --remote --env commons",
     "sync": "tsx scripts/sync.ts",
-    "capture": "tsx bridge/server.ts"
+    "capture": "tsx watch --clear-screen=false bridge/server.ts"
   },
   "dependencies": {
     "hono": "^4.13.16",
