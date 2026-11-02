@@ -1,8 +1,9 @@
 import { Hono } from 'hono'
 import { imageKey, isWebVariant } from '../shared/image-variants'
-import { price } from '../shared/pricing'
 import type { PublicPainting } from '../shared/types'
 import { currentUser, login, logout, type Env } from './auth'
+import { getPriceFunction } from './settings'
+import type { PriceFn } from '../shared/pricing'
 import admin from './routes/admin'
 import capture from './routes/capture'
 import rate from './routes/rate'
@@ -13,25 +14,26 @@ const app = new Hono<Env>()
 // ---------- public ----------
 
 const publicSelect = `SELECT p.id, p.title, p.width_cm, p.height_cm, p.status, p.variants_version, p.created_at,
+	NULL AS group_name, NULL AS number,
 	(SELECT AVG(score) FROM ratings WHERE painting_id = p.id) AS rating
 	FROM paintings p WHERE p.status != 'draft' AND p.variants_version IS NOT NULL`
 
-// price from rating × size (shared/pricing.ts); the rating itself is not published
-const withPrice = ({ rating, ...p }: PublicPainting & { rating: number | null }): PublicPainting => ({
-	...p,
-	price: price(p.width_cm, p.height_cm, rating),
-})
+type Rated = PublicPainting & { rating: number | null }
+// price from rating × size (formula on /admin); the rating itself is not published
+const withPrice =
+	(price: PriceFn) =>
+	({ rating, ...p }: Rated): PublicPainting => ({ ...p, price: price(p.width_cm, p.height_cm, rating) })
 
 app.get('/api/paintings', async (c) => {
-	const { results } = await c.env.DB.prepare(`${publicSelect} ORDER BY p.created_at`).all<PublicPainting & { rating: number | null }>()
-	return c.json(results.map(withPrice))
+	const { results } = await c.env.DB.prepare(`${publicSelect} ORDER BY p.created_at`).all<Rated>()
+	return c.json(results.map(withPrice(await getPriceFunction(c.env.DB))))
 })
 
 app.get('/api/paintings/:id', async (c) => {
 	const painting = await c.env.DB.prepare(`${publicSelect} AND p.id = ?`)
 		.bind(c.req.param('id'))
-		.first<PublicPainting & { rating: number | null }>()
-	return painting ? c.json(withPrice(painting)) : c.notFound()
+		.first<Rated>()
+	return painting ? c.json(withPrice(await getPriceFunction(c.env.DB))(painting)) : c.notFound()
 })
 
 // web variants only; URLs carry ?v=<variants_version>, so they can be cached forever

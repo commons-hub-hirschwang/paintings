@@ -1,4 +1,4 @@
-// Capture projects: captures/projects/<name>/{raw/, paintings/, calibration.json, settings.json}.
+// Capture projects: captures/projects/<name>/{raw/, paintings/, calibration.json, settings.json, groups.json}.
 // The current project is remembered in captures/current-project.
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -33,7 +33,23 @@ export function openProject(name: string, create = false) {
 	if (!existsSync(join(root, clean))) {
 		if (!create) throw new Error(`no project "${clean}"`)
 		mkdirSync(join(root, clean), { recursive: true })
+		writeFileSync(join(root, clean, 'groups.json'), JSON.stringify(['A']))
 	}
 	writeFileSync(currentFile, clean)
 	return clean
+}
+
+// groups = physical stacks: A, B, C, …, Z, AA, AB, … (one default group per project)
+const groupsFile = () => projectPath('groups.json')
+export const listGroups = (): string[] => (existsSync(groupsFile()) ? JSON.parse(readFileSync(groupsFile(), 'utf8')) : ['A'])
+
+const letters = (n: number): string => (n < 26 ? '' : letters(Math.floor(n / 26) - 1)) + String.fromCharCode(65 + (n % 26))
+
+export function addGroup() {
+	const groups = listGroups()
+	let n = groups.length
+	while (groups.includes(letters(n))) n++
+	const group = letters(n)
+	writeFileSync(groupsFile(), JSON.stringify([...groups, group]))
+	return group
 }

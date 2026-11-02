@@ -13,7 +13,8 @@ export const webVariants = {
 } as const
 
 export type WebVariant = keyof typeof webVariants
-export type Variant = WebVariant | 'archive'
+// private: archive (rectified master) and original (photo crop around the corners, for later corrections)
+export type Variant = WebVariant | 'archive' | 'original'
 
 export function isWebVariant(name: string): name is WebVariant {
 	return Object.hasOwn(webVariants, name)

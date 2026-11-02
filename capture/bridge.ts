@@ -6,17 +6,27 @@ export type BridgeStatus = {
 	project: string | null
 	projects: string[]
 	// below: only when a project is open
+	groups: string[]
 	calibration: Calibration | null
 	galleryUrl: string
 	hasUploadKey: boolean
 	connection: { ok: true; key: string } | { ok: false; error: string }
 	unsynced: number
 }
-export type LocalPainting = { id: string; title: string; widthCm: number; heightCm: number; createdAt: number; isSynced: boolean }
+export type LocalPainting = {
+	id: string
+	title: string
+	widthCm: number
+	heightCm: number
+	createdAt: number
+	isSynced: boolean
+	group: string
+	number: number
+}
 
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
 	const response = await fetch(`/bridge${path}`, init).catch(() => {
-		throw new Error('bridge not reachable — is `pnpm bridge` running?')
+		throw new Error('bridge not reachable — is `pnpm capture` running?')
 	})
 	const body = await response.json().catch(() => ({ error: `${response.status} ${response.statusText}` }))
 	if (!response.ok) throw new Error(body.error ?? `${response.status}`)
@@ -37,8 +47,9 @@ export const bridge = {
 	saveSettings: (settings: { galleryUrl: string; uploadKey: string }) =>
 		call('/settings', { ...json(settings), method: 'PUT' }),
 	openProject: (name: string, create = false) => call<{ project: string }>('/projects', json({ name, create })),
-	process: (body: { file: string; quad: Quad; title: string; widthCm?: number; heightCm?: number }) =>
+	process: (body: { file: string; quad: Quad; title: string; group: string; widthCm?: number; heightCm?: number }) =>
 		call<LocalPainting>('/process', json(body)),
+	addGroup: () => call<{ group: string }>('/groups', { method: 'POST' }),
 	paintings: () => call<LocalPainting[]>('/paintings'),
 	sync: () => call<{ synced: number; failed: { id: string; error: string }[] }>('/sync', { method: 'POST' }),
 	thumbUrl: (id: string) => `/bridge/paintings/${id}/thumb.jpg`,

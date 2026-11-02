@@ -4,7 +4,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import LoginGate from '@/components/LoginGate.vue'
 import { authed, user } from '@/auth'
 import { imageUrl } from '@/api'
-import type { RatePainting } from '../../shared/types'
+import { canName, stackLabel, type RatePainting } from '../../shared/types'
 
 const paintings = ref<RatePainting[]>([])
 const currentId = ref<string | null>(null)
@@ -41,6 +41,18 @@ async function rate(score: number) {
 	}
 }
 
+// authors and admins name paintings; saved when the field loses focus or on Enter
+async function rename(painting: RatePainting, title: string) {
+	if (title.trim() === painting.title) return
+	error.value = ''
+	try {
+		await authed(`/api/rate/paintings/${painting.id}/title`, { method: 'PUT', body: JSON.stringify({ title }) })
+		painting.title = title.trim()
+	} catch (e) {
+		error.value = (e as Error).message
+	}
+}
+
 // overlay is open while a painting is selected
 const select = (id: string | null) => (currentId.value = id)
 
@@ -56,7 +68,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 
 <template>
 	<main id="rate">
-		<LoginGate :roles="['admin', 'rater']">
+		<LoginGate :roles="['admin', 'author', 'rater']">
 			<header>
 				<h1>Rate paintings</h1>
 				<span class="muted">{{ rated.length }} of {{ paintings.length }} rated</span>
@@ -80,11 +92,20 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 							{{ score }}
 						</button>
 					</div>
-					<p>
-						<strong>{{ current.title || 'Untitled' }}</strong>
-						<br />
-						<span class="muted">{{ current.width_cm }} × {{ current.height_cm }} cm</span>
+					<label v-if="canName(user?.role)">
+						Name <span class="muted">{{ stackLabel(current) }}</span>
+						<input
+							:key="current.id"
+							:value="current.title"
+							placeholder="Untitled"
+							@change="rename(current, ($event.target as HTMLInputElement).value)"
+							@keydown.enter="($event.target as HTMLInputElement).blur()"
+						/>
+					</label>
+					<p v-else>
+						<strong>{{ current.title || 'Untitled' }}</strong> <span class="muted">{{ stackLabel(current) }}</span>
 					</p>
+					<p class="muted">{{ current.width_cm }} × {{ current.height_cm }} cm</p>
 					<p class="muted">
 						{{ rated.length }} of {{ paintings.length }} rated<br />
 						Keys 1–9, 0 = 10, Esc closes. Image opens in full detail.
@@ -104,7 +125,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 					>
 						<img :src="imageUrl(painting, 'thumb')" :alt="painting.title" loading="lazy" />
 						<figcaption>
-							{{ painting.title || 'Untitled' }}
+							<span><span class="muted">{{ stackLabel(painting) }}</span> {{ painting.title || 'Untitled' }}</span>
 							<span class="muted">{{ painting.my_score ?? '' }}</span>
 						</figcaption>
 					</figure>

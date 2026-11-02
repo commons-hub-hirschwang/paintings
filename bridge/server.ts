@@ -12,11 +12,11 @@ import { createServer as createViteServer } from 'vite'
 import { Hono } from 'hono'
 import { calibrate, estimateSizeCm, rectifiedSize, type Calibration, type Quad } from '../shared/geometry'
 import sharp from 'sharp'
-import { webVariants } from '../shared/image-variants'
+import { archive, webVariants } from '../shared/image-variants'
 import { checkConnection, getSettings, saveSettings } from './api'
-import { listPaintings, paintingFile, savePainting } from './store'
+import { listPaintings, nextNumber, paintingFile, savePainting } from './store'
 import { isSynced, syncAll } from './sync'
-import { currentProject, listProjects, openProject, projectPath } from './project'
+import { addGroup, currentProject, listGroups, listProjects, openProject, projectPath } from './project'
 import { warpToRectangle } from './warp'
 
 const run = promisify(execFile)
@@ -46,6 +46,7 @@ app.get('/status', async (c) => {
 		cameras,
 		project,
 		projects: listProjects(),
+		groups: listGroups(),
 		calibration: await readCalibration(),
 		galleryUrl,
 		hasUploadKey: !!uploadKey,
@@ -111,10 +112,29 @@ app.delete('/calibration', async (c) => {
 	return c.json({ ok: true })
 })
 
+// the photo around the selected corners (+ margin) instead of the whole photo, with the corners relative to it
+const ORIGINAL_MARGIN = 50
+async function cropOriginal(photo: string, quad: Quad) {
+	const upright = await sharp(photo).rotate().toBuffer({ resolveWithObject: true }) // same orientation as the editor
+	const xs = quad.map((p) => p.x)
+	const ys = quad.map((p) => p.y)
+	const left = Math.max(0, Math.floor(Math.min(...xs) - ORIGINAL_MARGIN))
+	const top = Math.max(0, Math.floor(Math.min(...ys) - ORIGINAL_MARGIN))
+	const crop = {
+		left,
+		top,
+		width: Math.min(upright.info.width, Math.ceil(Math.max(...xs) + ORIGINAL_MARGIN)) - left,
+		height: Math.min(upright.info.height, Math.ceil(Math.max(...ys) + ORIGINAL_MARGIN)) - top,
+	}
+	const jpeg = await sharp(upright.data).extract(crop).jpeg({ quality: archive.quality }).toBuffer()
+	return { jpeg, crop, quad: quad.map((p) => ({ x: p.x - left, y: p.y - top })) as Quad }
+}
+
 // corners selected → rectify and store locally (works offline; uploaded by /sync)
 app.post('/process', async (c) => {
 	await ensureDirs()
-	const body = await c.req.json<{ file: string; quad: Quad; title: string; widthCm?: number; heightCm?: number }>()
+	const body = await c.req.json<{ file: string; quad: Quad; title: string; group: string; widthCm?: number; heightCm?: number }>()
+	if (!listGroups().includes(body.group)) return c.json({ error: `unknown group "${body.group}"` }, 400)
 	let calibration = await readCalibration()
 	let size: { widthCm: number; heightCm: number }
 	if (body.widthCm && body.heightCm) {
@@ -128,8 +148,10 @@ app.post('/process', async (c) => {
 		return c.json({ error: 'no calibration — measure this painting' }, 400)
 	}
 
+	const photo = join(dirs.raw, basename(body.file))
 	const { width, height } = rectifiedSize(body.quad, size.widthCm, size.heightCm)
-	const archive = await warpToRectangle(join(dirs.raw, basename(body.file)), body.quad, width, height)
+	const archive = await warpToRectangle(photo, body.quad, width, height)
+	const original = await cropOriginal(photo, body.quad)
 
 	const { maxSize, quality } = webVariants.thumb
 	const thumb = await sharp(archive).resize({ width: maxSize, height: maxSize, fit: 'inside' }).jpeg({ quality }).toBuffer()
@@ -141,8 +163,11 @@ app.post('/process', async (c) => {
 		heightCm: round(size.heightCm),
 		createdAt: Date.now(),
 		synced: [],
+		group: body.group,
+		number: nextNumber(await listPaintings(), body.group),
+		original: { photo: basename(body.file), crop: original.crop, quad: original.quad },
 	}
-	await savePainting(painting, archive, thumb)
+	await savePainting(painting, { archive, thumb, original: original.jpeg })
 	return c.json(painting)
 })
 
@@ -165,6 +190,9 @@ app.put('/settings', async (c) => {
 
 // upload everything the configured gallery doesn't have yet
 app.post('/sync', async (c) => c.json(await syncAll(console.log)))
+
+// new group (stack) in the current project
+app.post('/groups', (c) => c.json({ group: addGroup() }))
 
 // open an existing project or create a new one (e.g. "test", "attic", a client's collection)
 app.post('/projects', async (c) => {

@@ -9,9 +9,17 @@ export type Painting = {
 	status: PaintingStatus
 	variants_version: string | null
 	created_at: number
+	// physical stack and position in it, e.g. group "A", number 3 → "A #3"
+	group_name: string | null
+	number: number | null
 }
 
-export type Role = 'admin' | 'rater'
+export const stackLabel = (p: Pick<Painting, 'group_name' | 'number'>) =>
+	p.group_name !== null && p.number !== null ? `${p.group_name} #${p.number}` : ''
+
+// rater: rates; author: rates and names paintings; admin: everything
+export type Role = 'admin' | 'author' | 'rater'
+export const canName = (role: Role | undefined) => role === 'admin' || role === 'author'
 export type User = { name: string; role: Role }
 
 // public: with computed price (rating itself stays private)

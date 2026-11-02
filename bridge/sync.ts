@@ -1,27 +1,35 @@
+import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { api, getSettings, json } from './api'
 import { publishWebVariants } from './images'
-import { listPaintings, paintingFile, writePainting } from './store'
+import { listPaintings, paintingFile, writePainting, type LocalPainting } from './store'
 
 export const isSynced = (painting: { synced: string[] }) => painting.synced.includes(getSettings().galleryUrl)
 
-// Upload all local paintings the gallery (GALLERY_URL) doesn't have yet. Idempotent: safe to rerun after failures.
+const upload = async (id: string, variant: 'archive' | 'original', file: Buffer) =>
+	api(`/paintings/${id}/images/${variant}`, { method: 'PUT', body: new Uint8Array(file), headers: { 'content-type': 'image/jpeg' } })
+
+const postPainting = (p: LocalPainting) =>
+	api('/paintings', {
+		method: 'POST',
+		...json({ id: p.id, title: p.title, width_cm: p.widthCm, height_cm: p.heightCm, group_name: p.group, number: p.number }),
+	})
+
+// Upload all local paintings the gallery doesn't have yet; metadata (group, number, size) of the others is
+// re-sent (cheap; the title only counts on first upload). Idempotent: safe to rerun after failures.
 export async function syncAll(log: (line: string) => void = () => {}) {
 	const { galleryUrl } = getSettings()
-	const todo = (await listPaintings()).filter((p) => !isSynced(p))
+	const paintings = await listPaintings()
+	for (const painting of paintings.filter(isSynced)) await postPainting(painting)
+	const todo = paintings.filter((p) => !isSynced(p))
 	const failed: { id: string; error: string }[] = []
 	for (const painting of todo) {
 		try {
 			const archive = await readFile(paintingFile(painting.id, 'archive.jpg'))
-			await api('/paintings', {
-				method: 'POST',
-				...json({ id: painting.id, title: painting.title, width_cm: painting.widthCm, height_cm: painting.heightCm }),
-			})
-			await api(`/paintings/${painting.id}/images/archive`, {
-				method: 'PUT',
-				body: new Uint8Array(archive),
-				headers: { 'content-type': 'image/jpeg' },
-			})
+			await postPainting(painting)
+			await upload(painting.id, 'archive', archive)
+			if (existsSync(paintingFile(painting.id, 'original.jpg')))
+				await upload(painting.id, 'original', await readFile(paintingFile(painting.id, 'original.jpg')))
 			await publishWebVariants(painting.id, archive)
 			await writePainting({ ...painting, synced: [...painting.synced, galleryUrl] })
 			log(`✓ ${painting.title || 'Untitled'}`)

@@ -1,17 +1,29 @@
-// Price = aesthetic factor × size factor. Edit the numbers here; prices update on the next deploy.
-//   price = eurPerM2 × area^areaExponent × (rating / 5)^ratingExponent, at least `minimum`, rounded to `roundTo`
-// areaExponent < 1: large paintings cost more, but less than proportionally to their area.
-export const pricing = {
-	eurPerM2: 600, // a 1 m² painting rated 5
-	areaExponent: 0.8,
-	ratingExponent: 1.5,
-	minimum: 80,
-	roundTo: 10,
-} as const
+// Price = formula over size and averaged aesthetic rating. The formula is edited on /admin (stored in D1);
+// this default applies until someone saves one. Language: shared/expr.ts.
+//   600 €/m² for a painting rated 5; area^0.8: large paintings cost more, but less than proportionally;
+//   rating^1.5: better paintings gain more than linearly; at least 80 €; rounded to 10 €.
+// Results are always rounded to whole euros; no rating (or no size) → no price ("price on request").
+import { compile } from './expr'
 
-export function price(widthCm: number | null, heightCm: number | null, rating: number | null): number | null {
-	if (!widthCm || !heightCm || rating === null) return null
-	const areaM2 = (widthCm * heightCm) / 10_000
-	const raw = pricing.eurPerM2 * areaM2 ** pricing.areaExponent * (rating / 5) ** pricing.ratingExponent
-	return Math.max(pricing.minimum, Math.round(raw / pricing.roundTo) * pricing.roundTo)
+export const defaultPriceFormula = 'max(80, round(600 * area_m2^0.8 * (rating / 5)^1.5, 10))'
+export const priceVariables = ['width_cm', 'height_cm', 'area_m2', 'rating'] as const
+
+export type PriceFn = (widthCm: number | null, heightCm: number | null, rating: number | null) => number | null
+
+// throws FormulaError for invalid formulas
+export function priceFunction(formula: string): PriceFn {
+	const run = compile(formula, priceVariables)
+	return (widthCm, heightCm, rating) => {
+		if (!widthCm || !heightCm || rating === null) return null
+		const value = run({ width_cm: widthCm, height_cm: heightCm, area_m2: (widthCm * heightCm) / 10_000, rating })
+		return Number.isFinite(value) && value > 0 ? Math.round(value) : null
+	}
 }
+
+// examples shown next to the formula on /admin
+export const priceExamples = [
+	{ widthCm: 30, heightCm: 40, rating: 5 },
+	{ widthCm: 60, heightCm: 80, rating: 5 },
+	{ widthCm: 60, heightCm: 80, rating: 8 },
+	{ widthCm: 100, heightCm: 120, rating: 7 },
+]

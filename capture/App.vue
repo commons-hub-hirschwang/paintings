@@ -15,6 +15,8 @@ const quad = ref<Quad | null>(null)
 let photoSize = { width: 0, height: 0 }
 let lastQuad: { quad: Quad; width: number; height: number } | null = null
 const title = ref('')
+const group = ref('')
+const NEW_GROUP = '\u0000new'
 const widthCm = ref<number | ''>('')
 const heightCm = ref<number | ''>('')
 const busy = ref('')
@@ -54,6 +56,8 @@ const refreshStatus = () =>
 	run('Connecting to bridge…', async () => {
 		status.value = await bridge.status()
 		paintings.value = status.value.project ? await bridge.paintings() : []
+		// keep the chosen group; default: group of the last capture
+		if (!status.value.groups?.includes(group.value)) group.value = paintings.value[0]?.group ?? status.value.groups?.[0] ?? ''
 		askReuse.value = !!status.value.calibration && sessionStorage.getItem(confirmedKey()) !== 'yes'
 	})
 refreshStatus()
@@ -72,6 +76,17 @@ const openProject = (name: string, create = false) =>
 		newProject.value = ''
 		await refreshStatus()
 	})
+
+// "New group…" in the select creates the next group (B, C, …) and selects it
+function chooseGroup(value: string) {
+	if (value !== NEW_GROUP) return (group.value = value)
+	run('Creating group…', async () => {
+		group.value = (await bridge.addGroup()).group
+		status.value = await bridge.status()
+	})
+}
+const nextNumber = computed(() => Math.max(-1, ...paintings.value.filter((p) => p.group === group.value).map((p) => p.number)) + 1)
+const label = (p: { group: string; number: number }) => `${p.group} #${p.number}`
 
 const calibration = computed(() => status.value?.calibration ?? null)
 const measured = computed(() => Number(widthCm.value) > 0 && Number(heightCm.value) > 0)
@@ -107,6 +122,7 @@ const save = () =>
 			file: photo.value!,
 			quad: quad.value!,
 			title: title.value.trim(),
+			group: group.value,
 			...(measured.value ? { widthCm: Number(widthCm.value), heightCm: Number(heightCm.value) } : {}),
 		})
 		lastQuad = { quad: quad.value!, ...photoSize }
@@ -178,10 +194,20 @@ const cm = (value: number) => value.toFixed(1)
 					<fieldset>
 					<legend>Painting</legend>
 					<p class="muted">Press anywhere and move: the nearest corner follows (Shift = slow). Keys 1–4 select a corner, arrows nudge it.</p>
-					<label>
-						Title
-						<input v-model="title" placeholder="Untitled" autofocus />
-					</label>
+					<div class="name">
+						<label>
+							Group
+							<select :value="group" @change="chooseGroup(($event.target as HTMLSelectElement).value)">
+								<option v-for="g in status.groups" :key="g" :value="g">{{ g }}</option>
+								<option :value="NEW_GROUP">New group…</option>
+							</select>
+						</label>
+						<span class="number">#{{ nextNumber }}</span>
+						<label>
+							Name
+							<input v-model="title" placeholder="Untitled" autofocus />
+						</label>
+					</div>
 					<p v-if="!calibration" class="warning">
 						First painting of this session: measure it. This calibrates all following paintings — don't move the camera,
 						change zoom or the painting position afterwards.
@@ -213,7 +239,7 @@ const cm = (value: number) => value.toFixed(1)
 				<figure v-for="painting in paintings" :key="painting.id">
 					<img :src="bridge.thumbUrl(painting.id)" :alt="painting.title" />
 					<figcaption>
-						{{ painting.title || 'Untitled' }}
+						<span><strong>{{ label(painting) }}</strong> {{ painting.title || 'Untitled' }}</span>
 						<span class="muted">
 							{{ cm(painting.widthCm) }} × {{ cm(painting.heightCm) }} cm · {{ painting.isSynced ? 'synced' : 'not synced' }}
 						</span>
@@ -230,7 +256,7 @@ const cm = (value: number) => value.toFixed(1)
 						({{ status.connection.ok ? `key "${status.connection.key}"` : status.hasUploadKey ? 'not reachable / key invalid' : 'no upload key' }})
 					</span>
 				</p>
-				<button :disabled="!!busy || !status.unsynced" @click="sync">Sync {{ status.unsynced || '' }}</button>
+				<button :disabled="!!busy" @click="sync">Sync {{ status.unsynced || '' }}</button>
 				<form @submit.prevent="saveSettings">
 					<label>
 						Gallery URL
@@ -279,9 +305,20 @@ const cm = (value: number) => value.toFixed(1)
 		}
 	}
 
-	& .size {
+	& .size,
+	& .name {
 		display: flex;
+		align-items: flex-end;
 		gap: var(--gap);
+	}
+
+	& .name label:last-child {
+		flex: 1;
+	}
+
+	& .number {
+		padding-bottom: 0.4rem;
+		font-weight: bold;
 	}
 
 	& .sync {

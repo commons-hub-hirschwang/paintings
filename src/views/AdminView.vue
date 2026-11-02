@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import LoginGate from '@/components/LoginGate.vue'
 import { authed, user } from '@/auth'
 import { imageUrl } from '@/api'
-import { paintingStatuses, type AdminPainting, type PaintingStatus, type UploadKey } from '../../shared/types'
+import { paintingStatuses, stackLabel, type AdminPainting, type PaintingStatus, type UploadKey } from '../../shared/types'
+import { priceExamples, priceFunction, priceVariables, type PriceFn } from '../../shared/pricing'
+import { functions } from '../../shared/expr'
 
 const paintings = ref<AdminPainting[]>([])
 const keys = ref<UploadKey[]>([])
@@ -11,12 +13,30 @@ const keyName = ref('')
 const newKey = ref<{ name: string; key: string } | null>(null)
 const error = ref('')
 
+// price formula: edited here, previewed live (examples + table), saved to the server
+const pricing = ref({ formula: '', default: '' })
+const formula = ref('')
+const preview = computed<{ price: PriceFn | null; error: string }>(() => {
+	try {
+		return { price: priceFunction(formula.value), error: '' }
+	} catch (e) {
+		return { price: null, error: (e as Error).message }
+	}
+})
+const changed = computed(() => formula.value.trim() !== pricing.value.formula)
+const priceOf = (p: AdminPainting) => (changed.value ? preview.value.price?.(p.width_cm, p.height_cm, p.rating) : p.price)
+const eur = (value: number | null | undefined) => (value ? `${value} €` : '–')
+
 async function load() {
-	;[paintings.value, keys.value] = await Promise.all([
+	;[paintings.value, keys.value, pricing.value] = await Promise.all([
 		authed<AdminPainting[]>('/api/admin/paintings'),
 		authed<UploadKey[]>('/api/admin/keys'),
+		authed<{ formula: string; default: string }>('/api/admin/pricing'),
 	])
+	if (!changed.value || !formula.value) formula.value = pricing.value.formula
 }
+
+const savePricing = () => act(() => authed('/api/admin/pricing', { method: 'PUT', body: JSON.stringify({ formula: formula.value }) }))
 watch(user, (u) => u?.role === 'admin' && load().catch((e) => (error.value = e.message)), { immediate: true })
 
 async function act(task: () => Promise<unknown>) {
@@ -28,6 +48,9 @@ async function act(task: () => Promise<unknown>) {
 		error.value = (e as Error).message
 	}
 }
+
+const rename = (painting: AdminPainting, title: string) =>
+	act(() => authed(`/api/rate/paintings/${painting.id}/title`, { method: 'PUT', body: JSON.stringify({ title }) }))
 
 const setStatus = (painting: AdminPainting, status: PaintingStatus) =>
 	act(() => authed(`/api/admin/paintings/${painting.id}`, { method: 'PATCH', body: JSON.stringify({ status }) }))
@@ -54,23 +77,32 @@ const date = (seconds: number | null) => (seconds ? new Date(seconds * 1000).toL
 				<table>
 					<tr>
 						<th></th>
-						<th>Title</th>
+						<th>Stack</th>
+						<th>Name</th>
 						<th>Size (cm)</th>
 						<th>Rating</th>
-						<th>Price</th>
+						<th>Price{{ changed ? ' (preview)' : '' }}</th>
 						<th>Status</th>
 					</tr>
 					<tr v-for="painting in paintings" :key="painting.id">
 						<td>
 							<img v-if="painting.variants_version" :src="imageUrl(painting, 'thumb')" :alt="painting.title" loading="lazy" />
 						</td>
-						<td>{{ painting.title || 'Untitled' }}</td>
+						<td>{{ stackLabel(painting) }}</td>
+						<td>
+							<input
+								:value="painting.title"
+								placeholder="Untitled"
+								@change="rename(painting, ($event.target as HTMLInputElement).value)"
+								@keydown.enter="($event.target as HTMLInputElement).blur()"
+							/>
+						</td>
 						<td>{{ painting.width_cm }} × {{ painting.height_cm }}</td>
 						<td>
 							{{ painting.rating?.toFixed(1) ?? '–' }}
 							<span class="muted">({{ painting.ratings }})</span>
 						</td>
-						<td>{{ painting.price ? `${painting.price} €` : '–' }}</td>
+						<td>{{ eur(priceOf(painting)) }}</td>
 						<td>
 							<select :value="painting.status" @change="setStatus(painting, ($event.target as HTMLSelectElement).value as PaintingStatus)">
 								<option v-for="status in paintingStatuses" :key="status">{{ status }}</option>
@@ -79,6 +111,26 @@ const date = (seconds: number | null) => (seconds ? new Date(seconds * 1000).toL
 					</tr>
 				</table>
 			</section>
+
+			<fieldset class="pricing">
+				<legend>Price formula</legend>
+				<p class="muted">
+					Variables: {{ priceVariables.join(', ') }} (rating = average 1–10). Functions: {{ Object.keys(functions).join(', ') }};
+					round(x, 10) rounds to 10 €. Operators + − × / % ^. Result is rounded to whole euros; unrated paintings have no price.
+				</p>
+				<textarea v-model="formula" rows="2" spellcheck="false"></textarea>
+				<p v-if="preview.error" class="error">{{ preview.error }}</p>
+				<p v-else>
+					<span v-for="e in priceExamples" :key="`${e.widthCm}${e.heightCm}${e.rating}`" class="example">
+						{{ e.widthCm }}×{{ e.heightCm }} cm, rated {{ e.rating }}: <strong>{{ eur(preview.price?.(e.widthCm, e.heightCm, e.rating)) }}</strong>
+					</span>
+				</p>
+				<div class="actions">
+					<button :disabled="!changed || !!preview.error" @click="savePricing">Save formula</button>
+					<button :disabled="formula === pricing.default" @click="formula = pricing.default">Default</button>
+					<button :disabled="!changed" @click="formula = pricing.formula">Undo</button>
+				</div>
+			</fieldset>
 
 			<section>
 				<h2>Upload keys</h2>
@@ -132,6 +184,18 @@ const date = (seconds: number | null) => (seconds ? new Date(seconds * 1000).toL
 			width: 4rem;
 			height: 4rem;
 			object-fit: contain;
+		}
+	}
+
+	& .pricing {
+		& textarea {
+			font-family: monospace;
+			resize: vertical;
+		}
+
+		& .example {
+			margin-right: var(--gap);
+			white-space: nowrap;
 		}
 	}
 

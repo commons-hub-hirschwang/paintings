@@ -1,10 +1,10 @@
 // Buying via Stripe Checkout (plain REST, no SDK). Secrets: STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET.
 // Flow: reserve painting → Checkout session (expires in 30 min) → webhook: completed → sold, expired → available.
 import { Hono } from 'hono'
-import { price } from '../../shared/pricing'
-import { shipping, shippingTier } from '../../shared/shipping'
+import { shipping, shippingOptions } from '../../shared/shipping'
 import type { Painting } from '../../shared/types'
 import type { Env } from '../auth'
+import { getPriceFunction } from '../settings'
 
 type ShopEnv = Env & { Bindings: Env['Bindings'] & { STRIPE_SECRET_KEY: string; STRIPE_WEBHOOK_SECRET: string } }
 const shop = new Hono<ShopEnv>()
@@ -28,7 +28,7 @@ shop.post('/checkout/:id', async (c) => {
 	)
 		.bind(id)
 		.first<Painting & { rating: number | null }>()
-	const amount = painting && price(painting.width_cm, painting.height_cm, painting.rating)
+	const amount = painting && (await getPriceFunction(c.env.DB))(painting.width_cm, painting.height_cm, painting.rating)
 	if (!painting || !amount) return c.json({ error: 'not for sale' }, 404)
 
 	// atomic reservation: only one buyer at a time
@@ -36,10 +36,7 @@ shop.post('/checkout/:id', async (c) => {
 	if (!meta.changes) return c.json({ error: 'this painting is reserved or sold' }, 409)
 
 	const origin = new URL(c.req.url).origin
-	const options = [
-		{ label: shipping.pickup.label, eur: shipping.pickup.eur },
-		...[shippingTier(painting.width_cm, painting.height_cm)].filter((t) => t !== null),
-	]
+	const options = shippingOptions(painting.width_cm, painting.height_cm)
 	const params: Record<string, string | number> = {
 		mode: 'payment',
 		'line_items[0][quantity]': 1,

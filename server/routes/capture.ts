@@ -7,7 +7,7 @@ import { requireUploadKey, type Env } from '../auth'
 const capture = new Hono<Env>()
 capture.use(requireUploadKey)
 
-const variantParam = (name: string): Variant | null => (name === 'archive' || isWebVariant(name) ? name : null)
+const variantParam = (name: string): Variant | null => (name === 'archive' || name === 'original' || isWebVariant(name) ? name : null)
 
 capture.get('/me', (c) => c.json({ key: c.get('uploadKey') }))
 
@@ -16,15 +16,24 @@ capture.get('/paintings', async (c) => {
 	return c.json(results)
 })
 
-// id comes from the offline capture store; re-posting the same id updates it, so sync retries are safe
+// id comes from the offline capture store; re-posting the same id updates it, so sync retries are safe.
+// The title is only set on insert: names edited on the website win over the capture title.
 capture.post('/paintings', async (c) => {
-	const body = await c.req.json<{ id: string; title?: string; width_cm?: number; height_cm?: number }>()
+	const body = await c.req.json<{
+		id: string
+		title?: string
+		width_cm?: number
+		height_cm?: number
+		group_name?: string
+		number?: number
+	}>()
 	if (!body.id) return c.json({ error: 'id required' }, 400)
 	await c.env.DB.prepare(
-		`INSERT INTO paintings (id, title, width_cm, height_cm) VALUES (?, ?, ?, ?)
-		 ON CONFLICT (id) DO UPDATE SET title = excluded.title, width_cm = excluded.width_cm, height_cm = excluded.height_cm`,
+		`INSERT INTO paintings (id, title, width_cm, height_cm, group_name, number) VALUES (?, ?, ?, ?, ?, ?)
+		 ON CONFLICT (id) DO UPDATE SET width_cm = excluded.width_cm, height_cm = excluded.height_cm,
+			group_name = excluded.group_name, number = excluded.number`,
 	)
-		.bind(body.id, body.title ?? '', body.width_cm ?? null, body.height_cm ?? null)
+		.bind(body.id, body.title ?? '', body.width_cm ?? null, body.height_cm ?? null, body.group_name ?? null, body.number ?? null)
 		.run()
 	return c.json({ id: body.id }, 201)
 })
