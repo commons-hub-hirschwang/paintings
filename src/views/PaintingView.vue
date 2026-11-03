@@ -2,6 +2,7 @@
 import { ref } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import { fetchPainting, formatPrice, imageUrl, type PublicPainting } from '@/api'
+import { sizeLabel } from '../../shared/types'
 
 const route = useRoute()
 const painting = ref<PublicPainting | null | undefined>(undefined)
@@ -33,7 +34,7 @@ fetchPainting(String(route.params.id)).then((p) => (painting.value = p))
 			</a>
 			<aside>
 				<h1>{{ painting.title || 'Untitled' }}</h1>
-				<p class="muted">{{ painting.width_cm }} × {{ painting.height_cm }} cm</p>
+				<p class="muted">{{ sizeLabel(painting) }}</p>
 				<p v-if="bought">Thank you for your purchase! We will contact you about pick-up or shipping.</p>
 				<template v-else-if="painting.status === 'available' && painting.price">
 					<p><strong>{{ formatPrice(painting.price) }}</strong></p>

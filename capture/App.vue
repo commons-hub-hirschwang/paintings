@@ -1,9 +1,9 @@
 <script setup lang="ts">
 // Local capture tool (pnpm capture): project → capture → corners → title/size → save offline → sync.
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import CornerEditor from './CornerEditor.vue'
-import { bridge, type BridgeStatus, type LocalPainting } from './bridge'
-import { estimateSizeCm, reconstruct, type Camera, type Quad } from '../shared/geometry'
+import { bridge, type BridgeStatus, type Detection, type LocalPainting, type Photo } from './bridge'
+import { estimateSizeCm, reconstruct, turnCorners, type Camera, type Quad } from '../shared/geometry'
 
 const confirmedKey = () => `capture:calibration-confirmed:${status.value?.project}`
 const newProject = ref('')
@@ -11,13 +11,31 @@ const newProject = ref('')
 const status = ref<BridgeStatus | null>(null)
 const askReuse = ref(false)
 const photo = ref<string | null>(null)
+// corners in the painting's orientation: TL is the painting's top left, also when photographed sideways
 const quad = ref<Quad | null>(null)
+// view turned clockwise in quarter turns; kept for the next photos (a series photographed the same way)
+const turns = ref(0)
+// automatic corners (in the painting's orientation); its curved-edge correction applies while its corners are kept
+const detection = ref<Detection | null>(null)
+const keptDetection = computed(() => !!detection.value && quad.value === detection.value.quad)
+const maxBow = computed(() => Math.max(0, ...(detection.value?.sides.map((side) => Math.abs(side.bowPx)) ?? [])))
 const camera = ref<Camera | null>(null)
 let photoSize = { width: 0, height: 0 }
-let lastQuad: { quad: Quad; width: number; height: number } | null = null
+let lastQuad: { quad: Quad; turns: number; width: number; height: number } | null = null
 const title = ref('')
 const group = ref('')
 const NEW_GROUP = '\u0000new'
+// material: stays as chosen for the next paintings; the list: all materials used in this project
+const material = ref('')
+const NEW_MATERIAL = '\u0000new-material'
+const typingMaterial = ref(false)
+const materials = computed(() =>
+	[...new Set([...paintings.value.map((p) => p.material), ...(typingMaterial.value ? [] : [material.value])])].filter((m): m is string => !!m).sort(),
+)
+function chooseMaterial(value: string) {
+	typingMaterial.value = value === NEW_MATERIAL
+	material.value = typingMaterial.value ? '' : value
+}
 const widthCm = ref<number | ''>('')
 const heightCm = ref<number | ''>('')
 const busy = ref('')
@@ -59,6 +77,7 @@ const refreshStatus = () =>
 		paintings.value = status.value.project ? await bridge.paintings() : []
 		// keep the chosen group; default: group of the last capture
 		if (!status.value.groups?.includes(group.value)) group.value = paintings.value[0]?.group ?? status.value.groups?.[0] ?? ''
+		if (!material.value) material.value = paintings.value[0]?.material ?? ''
 		askReuse.value = !!status.value.calibration && sessionStorage.getItem(confirmedKey()) !== 'yes'
 	})
 refreshStatus()
@@ -105,17 +124,47 @@ function upload(event: Event) {
 	if (file) run('Uploading…', async () => setPhoto(await bridge.upload(file)))
 }
 
-function setPhoto(result: { file: string; camera: Camera }) {
-	quad.value = null
+// the bridge detects in the photo's orientation; turned into the painting's
+const turnDetection = (d: Detection, by: number): Detection => ({
+	...d,
+	quad: turnCorners(d.quad, by) as Quad,
+	sides: turnCorners(d.sides, by),
+})
+
+function setPhoto(result: Photo) {
+	detection.value = result.detection && turnDetection(result.detection, turns.value)
+	quad.value = detection.value?.quad ?? null
 	camera.value = result.camera
 	photo.value = result.file
 }
 
-// reuse the previous corners when the photo has the same size: paintings sit at the same spot
+// roughly placed corners → snapped to the painting's edges
+const snap = () =>
+	run('Snapping to edges…', async () => {
+		detection.value = turnDetection(await bridge.detect(photo.value!, quad.value!), turns.value)
+		quad.value = detection.value.quad
+	})
+
+// painting photographed sideways: turn the view; the corners turn along (same points, new top)
+function turn(direction: 1 | -1) {
+	turns.value = (turns.value + direction + 4) % 4
+	if (keptDetection.value) {
+		detection.value = turnDetection(detection.value!, direction)
+		quad.value = detection.value.quad
+	} else if (quad.value) quad.value = turnCorners(quad.value, direction) as Quad
+}
+function onKey(event: KeyboardEvent) {
+	if (event.key === 's' && !(event.target instanceof HTMLInputElement) && photo.value && quad.value && !busy.value) snap()
+}
+onMounted(() => window.addEventListener('keydown', onKey))
+onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
+
+// without detection: reuse the previous corners when the photo has the same size (paintings sit at the same spot)
 function onPhotoLoaded({ width, height }: { width: number; height: number }) {
 	photoSize = { width, height }
+	if (quad.value) return
 	if (lastQuad && lastQuad.width === width && lastQuad.height === height) {
-		quad.value = lastQuad.quad
+		quad.value = turnCorners(lastQuad.quad, turns.value - lastQuad.turns) as Quad
 		return
 	}
 	const inset = (x: number, y: number) => ({ x: width * x, y: height * y })
@@ -127,17 +176,20 @@ const save = () =>
 		await bridge.process({
 			file: photo.value!,
 			quad: quad.value!,
+			...(keptDetection.value ? { bows: detection.value!.sides.map((side) => side.bowPx) } : {}),
 			title: title.value.trim(),
 			group: group.value,
+			material: material.value.trim(),
 			...(measured.value ? { widthCm: Number(widthCm.value), heightCm: Number(heightCm.value) } : {}),
 		})
-		lastQuad = { quad: quad.value!, ...photoSize }
+		lastQuad = { quad: quad.value!, turns: turns.value, ...photoSize }
 		if (measured.value) sessionStorage.setItem(confirmedKey(), 'yes')
 		status.value = await bridge.status()
 		paintings.value = await bridge.paintings()
 		photo.value = null
 		quad.value = null
 		title.value = ''
+		typingMaterial.value = false
 		widthCm.value = heightCm.value = ''
 	})
 
@@ -200,12 +252,21 @@ const cm = (value: number) => value.toFixed(1)
 			</section>
 
 			<section v-else class="editor">
-				<CornerEditor v-model="quad" :src="bridge.rawUrl(photo)" @loaded="onPhotoLoaded" />
+				<CornerEditor v-model="quad" :src="bridge.photoUrl(photo)" :turns="turns" @turn="turn" @loaded="onPhotoLoaded" />
 
 				<form @submit.prevent="canSave && save()">
 					<fieldset>
 					<legend>Painting</legend>
-					<p class="muted">Press anywhere and move: the nearest corner follows (Shift = slow). Keys 1–4 select a corner, arrows nudge it.</p>
+					<p v-if="keptDetection && detection!.trusted">Corners detected automatically.</p>
+					<p v-else-if="keptDetection" class="warning">Detection unsure — check the corners.</p>
+					<p v-else-if="!detection" class="warning">No painting edges found — set the corners.</p>
+					<p v-if="keptDetection && maxBow > 3" class="muted">
+						Edges bow up to {{ maxBow.toFixed(0) }} px (canvas) — straightened.
+					</p>
+					<p class="muted">
+						Press anywhere and move: the nearest corner follows (Shift = slow). Keys 1–4 select a corner, arrows nudge it.
+						Rough corners? <button type="button" :disabled="!!busy || !quad" @click="snap">Snap to edges</button> (S)
+					</p>
 					<div class="name">
 						<label>
 							Group
@@ -220,11 +281,28 @@ const cm = (value: number) => value.toFixed(1)
 							<input v-model="title" placeholder="Untitled" autofocus />
 						</label>
 					</div>
+					<div class="name">
+						<label>
+							Material
+							<select :value="typingMaterial ? NEW_MATERIAL : material" @change="chooseMaterial(($event.target as HTMLSelectElement).value)">
+								<option v-if="!materials.length && !typingMaterial" value="" disabled>–</option>
+								<option v-for="m in materials" :key="m" :value="m">{{ m }}</option>
+								<option :value="NEW_MATERIAL">New material…</option>
+							</select>
+						</label>
+						<label v-if="typingMaterial">
+							New material
+							<input v-model="material" placeholder="e.g. Öl auf Leinwand" autofocus />
+						</label>
+					</div>
 					<p v-if="!calibration" class="warning">
 						First painting of this session: measure it. This calibrates all following paintings — don't move the camera,
 						change zoom or the painting position afterwards.
 					</p>
-					<p v-else-if="estimate">
+					<p v-else-if="calibration.centerDepthCm && camera?.lens && !calibration.lensCorrected" class="warning">
+						Calibrated before lens correction — measure one painting again for exact sizes.
+					</p>
+					<p v-if="calibration && estimate">
 						Size: {{ cm(estimate.widthCm) }} × {{ cm(estimate.heightCm) }} cm
 						<span class="muted">(from calibration; entering a measured size recalibrates)</span>
 					</p>

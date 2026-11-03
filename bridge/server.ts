@@ -17,14 +17,45 @@ import { checkConnection, getSettings, saveSettings } from './api'
 import { listPaintings, nextNumber, paintingFile, savePainting } from './store'
 import { isSynced, syncAll } from './sync'
 import { addGroup, currentProject, listGroups, listProjects, openProject, projectPath } from './project'
-import { warpToRectangle } from './warp'
-import { cameraOf } from './camera'
+import { correctLens, warpToRectangle } from './warp'
+import { cameraOf, lensOf } from './camera'
+import { detectCorners, trusted } from './detect'
 
 const run = promisify(execFile)
-const dirs = { get raw() { return projectPath('raw') } }
+// raw: the camera's photos (untouched); corrected: lens-corrected copies, in which corners are picked
+const dirs = { get raw() { return projectPath('raw') }, get corrected() { return projectPath('corrected') } }
 const calibrationFile = () => projectPath('calibration.json')
 // created before every write, so deleting captures/ while the bridge runs is harmless
-const ensureDirs = () => mkdir(dirs.raw, { recursive: true })
+const ensureDirs = () => Promise.all([mkdir(dirs.raw, { recursive: true }), mkdir(dirs.corrected, { recursive: true })])
+
+// the photo the corner editor shows (lens-corrected when the lens has a profile), created on demand
+async function correctedPhoto(file: string) {
+	const raw = join(dirs.raw, basename(file))
+	if (!existsSync(raw)) return null
+	const camera = await cameraOf(raw)
+	const lens = lensOf(camera)
+	if (!lens) return { path: raw, camera, raw }
+	const path = join(dirs.corrected, `${basename(file)}.jpg`)
+	if (!existsSync(path)) {
+		await ensureDirs()
+		await writeFile(path, await correctLens(raw, lens))
+	}
+	return { path, camera, raw }
+}
+
+// corners of the last saved painting: the next one usually stands at the same spot (detection hint)
+let lastQuad: { quad: Quad; width: number; height: number } | null = null
+
+async function photoResult(file: string) {
+	const photo = (await correctedPhoto(file))!
+	const hint = lastQuad && lastQuad.width === photo.camera.width && lastQuad.height === photo.camera.height ? lastQuad.quad : null
+	const detection = await detectCorners(photo.path, hint).catch((error) => (console.error(error), null))
+	return {
+		file,
+		camera: photo.camera,
+		detection: detection && { ...detection, trusted: trusted(detection, photo.camera) },
+	}
+}
 
 const readCalibration = async (): Promise<Calibration | null> =>
 	existsSync(calibrationFile()) ? JSON.parse(await readFile(calibrationFile(), 'utf8')) : null
@@ -57,13 +88,15 @@ app.get('/status', async (c) => {
 })
 
 // remote-trigger the tethered camera and download the JPEG. One capture at a time; a camera that does not
-// fire (asleep, no focus) is given up after 20 s instead of hanging for a minute.
+// fire (asleep, no focus) is given up after 20 s instead of hanging for a minute. SIGTERM (not SIGKILL) lets
+// gphoto2 cancel and close the PTP session — a killed session leaves the camera's USB stuck until power-cycled.
 let capturing = false
 const CAPTURE_TIMEOUT = 20_000
 
 function captureError(error: { killed?: boolean; stderr?: string; message: string }) {
 	const output = error.stderr || error.message
-	if (error.killed) return 'camera did not take a picture within 20 s (waking up? no focus?) — press Capture again'
+	if (error.killed || /PTP Timeout/i.test(output))
+		return 'camera did not respond within 20 s (no focus? asleep?) — press Capture again; if it repeats, switch the camera off and on'
 	if (/Could not claim|resource busy/i.test(output))
 		return 'camera is busy: another program holds it. Run `pkill -f gvfs-gphoto2-volume-monitor` or replug the camera, then try again'
 	if (/No camera found|-105/i.test(output)) return 'no camera found — check USB cable and USB Connection = PC Remote'
@@ -79,13 +112,13 @@ app.post('/capture', async (c) => {
 		const { stdout } = await run(
 			'gphoto2',
 			['--capture-image-and-download', '--force-overwrite', '--filename', `${dirs.raw}/${stamp}.%C`],
-			{ timeout: CAPTURE_TIMEOUT, killSignal: 'SIGKILL' },
+			{ timeout: CAPTURE_TIMEOUT, killSignal: 'SIGTERM' },
 		)
 		const saved = [...stdout.matchAll(/Saving file as (\S+)/g)].map((m) => m[1]!)
 		const jpeg = saved.find((file) => /\.jpe?g$/i.test(file))
 		if (!jpeg)
 			return c.json({ error: saved.length ? 'no JPEG captured — set the camera to JPEG' : 'camera did not take a picture — press Capture again' }, 500)
-		return c.json({ file: basename(jpeg), camera: await cameraOf(jpeg) })
+		return c.json(await photoResult(basename(jpeg)))
 	} catch (error) {
 		return c.json({ error: captureError(error as { killed?: boolean; stderr?: string; message: string }) }, 500)
 	} finally {
@@ -98,13 +131,23 @@ app.post('/upload', async (c) => {
 	await ensureDirs()
 	const file = `${Date.now()}.jpg`
 	await writeFile(join(dirs.raw, file), new Uint8Array(await c.req.arrayBuffer()))
-	return c.json({ file, camera: await cameraOf(join(dirs.raw, file)) })
+	return c.json(await photoResult(file))
 })
 
-app.get('/raw/:file', async (c) => {
-	const file = join(dirs.raw, basename(c.req.param('file')))
-	if (!existsSync(file)) return c.notFound()
-	return c.body(new Uint8Array(await readFile(file)), 200, { 'content-type': 'image/jpeg' })
+app.get('/photo/:file', async (c) => {
+	const photo = await correctedPhoto(c.req.param('file'))
+	if (!photo) return c.notFound()
+	return c.body(new Uint8Array(await readFile(photo.path)), 200, { 'content-type': 'image/jpeg' })
+})
+
+// "snap": refine roughly placed corners to the painting's edges
+app.post('/detect', async (c) => {
+	const { file, quad } = await c.req.json<{ file: string; quad: Quad }>()
+	const photo = await correctedPhoto(file)
+	if (!photo) return c.notFound()
+	const detection = await detectCorners(photo.path, quad, true)
+	if (!detection) return c.json({ error: 'no clear edges near these corners' }, 422)
+	return c.json({ ...detection, trusted: trusted(detection, photo.camera) })
 })
 
 // "same distance from camera to painting as before?" — no → forget calibration
@@ -134,16 +177,27 @@ async function cropOriginal(photo: string, quad: Quad) {
 // corners selected → rectify and store locally (works offline; uploaded by /sync)
 app.post('/process', async (c) => {
 	await ensureDirs()
-	const body = await c.req.json<{ file: string; quad: Quad; title: string; group: string; widthCm?: number; heightCm?: number }>()
+	// bows: per side (top, right, bottom, left), from the detection, when its corners were kept
+	const body = await c.req.json<{
+		file: string
+		quad: Quad
+		bows?: number[]
+		title: string
+		group: string
+		material?: string
+		widthCm?: number
+		heightCm?: number
+	}>()
 	if (!listGroups().includes(body.group)) return c.json({ error: `unknown group "${body.group}"` }, 400)
-	const photo = join(dirs.raw, basename(body.file))
-	const camera = await cameraOf(photo)
+	const photo = await correctedPhoto(body.file)
+	if (!photo) return c.json({ error: `no photo "${body.file}"` }, 404)
+	const { camera } = photo
 	let calibration = await readCalibration()
 	let size: { widthCm: number; heightCm: number }
 	if (body.widthCm && body.heightCm) {
 		// measured painting: (re)calibrates
 		size = { widthCm: body.widthCm, heightCm: body.heightCm }
-		calibration = calibrate(body.quad, size.widthCm, size.heightCm, camera)
+		calibration = { ...calibrate(body.quad, size.widthCm, size.heightCm, camera), lensCorrected: !!camera.lens }
 		await writeFile(calibrationFile(), JSON.stringify(calibration, null, '\t'))
 	} else if (calibration) {
 		size = estimateSizeCm(body.quad, calibration, camera)
@@ -152,8 +206,9 @@ app.post('/process', async (c) => {
 	}
 
 	const { width, height } = rectifiedSize(body.quad, size.widthCm, size.heightCm)
-	const archive = await warpToRectangle(photo, body.quad, width, height)
-	const original = await cropOriginal(photo, body.quad)
+	const archive = await warpToRectangle(photo.raw, body.quad, width, height, lensOf(camera), body.bows)
+	const original = await cropOriginal(photo.path, body.quad)
+	lastQuad = { quad: body.quad, width: camera.width, height: camera.height }
 
 	const { maxSize, quality } = webVariants.thumb
 	const thumb = await sharp(archive).resize({ width: maxSize, height: maxSize, fit: 'inside' }).jpeg({ quality }).toBuffer()
@@ -167,6 +222,7 @@ app.post('/process', async (c) => {
 		synced: [],
 		group: body.group,
 		number: nextNumber(await listPaintings(), body.group),
+		...(body.material?.trim() ? { material: body.material.trim() } : {}),
 		original: { photo: basename(body.file), crop: original.crop, quad: original.quad },
 	}
 	await savePainting(painting, { archive, thumb, original: original.jpeg })

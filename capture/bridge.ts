@@ -13,6 +13,9 @@ export type BridgeStatus = {
 	connection: { ok: true; key: string } | { ok: false; error: string }
 	unsynced: number
 }
+// automatic corners (bridge/detect.ts); bowPx per side (top, right, bottom, left), + = bowed inwards
+export type Detection = { quad: Quad; sides: { inliers: number; bowPx: number; contrast: number }[]; trusted: boolean }
+export type Photo = { file: string; camera: Camera; detection: Detection | null }
 export type LocalPainting = {
 	id: string
 	title: string
@@ -22,6 +25,7 @@ export type LocalPainting = {
 	isSynced: boolean
 	group: string
 	number: number
+	material?: string
 }
 
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
@@ -41,17 +45,27 @@ const json = (body: unknown): RequestInit => ({
 
 export const bridge = {
 	status: () => call<BridgeStatus>('/status'),
-	capture: () => call<{ file: string; camera: Camera }>('/capture', { method: 'POST' }),
-	upload: (file: File) => call<{ file: string; camera: Camera }>('/upload', { method: 'POST', body: file }),
+	capture: () => call<Photo>('/capture', { method: 'POST' }),
+	upload: (file: File) => call<Photo>('/upload', { method: 'POST', body: file }),
+	detect: (file: string, quad: Quad) => call<Detection>('/detect', json({ file, quad })),
 	forgetCalibration: () => call('/calibration', { method: 'DELETE' }),
 	saveSettings: (settings: { galleryUrl: string; uploadKey: string }) =>
 		call('/settings', { ...json(settings), method: 'PUT' }),
 	openProject: (name: string, create = false) => call<{ project: string }>('/projects', json({ name, create })),
-	process: (body: { file: string; quad: Quad; title: string; group: string; widthCm?: number; heightCm?: number }) =>
+	process: (body: {
+		file: string
+		quad: Quad
+		bows?: number[]
+		title: string
+		group: string
+		material?: string
+		widthCm?: number
+		heightCm?: number
+	}) =>
 		call<LocalPainting>('/process', json(body)),
 	addGroup: () => call<{ group: string }>('/groups', { method: 'POST' }),
 	paintings: () => call<LocalPainting[]>('/paintings'),
 	sync: () => call<{ synced: number; failed: { id: string; error: string }[] }>('/sync', { method: 'POST' }),
 	thumbUrl: (id: string) => `/bridge/paintings/${id}/thumb.jpg`,
-	rawUrl: (file: string) => `/bridge/raw/${encodeURIComponent(file)}`,
+	photoUrl: (file: string) => `/bridge/photo/${encodeURIComponent(file)}`,
 }

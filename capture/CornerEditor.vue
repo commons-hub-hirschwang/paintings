@@ -1,21 +1,24 @@
 <script setup lang="ts">
 // Set the 4 painting corners: press anywhere and the nearest corner moves with the mouse (cursor hidden,
 // magnifier shown, Shift = 1/10 speed). Arrow keys nudge the selected corner by 1 px (Shift: 10 px), keys 1–4 select.
+// The view can be turned in quarter turns (painting photographed sideways): the parent turns the corner order
+// along (turnCorners), the photo itself stays as it is; all screen input is turned back into photo coordinates.
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { Point, Quad } from '../shared/geometry'
 
-const props = defineProps<{ src: string }>()
+const props = defineProps<{ src: string; turns: number }>() // turns: clockwise quarter turns of the view
 const quad = defineModel<Quad | null>({ required: true }) // null until the parent sets corners on `loaded`
-const emit = defineEmits<{ loaded: [size: { width: number; height: number }] }>()
+const emit = defineEmits<{ loaded: [size: { width: number; height: number }]; turn: [direction: 1 | -1] }>()
 
 const LOUPE = 220 // css px
 const ZOOM = 2 // loupe css px per photo px
 const labels = ['top left', 'top right', 'bottom right', 'bottom left']
 
-const image = ref<HTMLImageElement>()
+const frame = ref<HTMLElement>()
 const loupe = ref<HTMLCanvasElement>()
 const natural = ref({ width: 0, height: 0 })
 const displayScale = ref(1) // css px per photo px
+const sideways = computed(() => props.turns % 2 === 1)
 const selected = ref(0)
 const dragging = ref(false)
 const loupeVisible = ref(false)
@@ -23,20 +26,44 @@ const loupeVisible = ref(false)
 const points = computed(() => (quad.value ?? []).map((p) => `${p.x},${p.y}`).join(' '))
 const handleRadius = computed(() => 14 / displayScale.value)
 
-function onLoad() {
-	const img = image.value!
+function onLoad(event: Event) {
+	const img = event.target as HTMLImageElement
 	natural.value = { width: img.naturalWidth, height: img.naturalHeight }
 	updateScale()
 	emit('loaded', natural.value)
 }
 
+// fit the (turned) photo into the available width and 75 % of the window height
 function updateScale() {
-	if (image.value && natural.value.width) displayScale.value = image.value.clientWidth / natural.value.width
+	const available = frame.value?.parentElement?.clientWidth ?? 0
+	const { width, height } = natural.value
+	if (!width || !available) return
+	const [w, h] = sideways.value ? [height, width] : [width, height]
+	displayScale.value = Math.min(available / w, (window.innerHeight * 0.75) / h)
 }
+watch(sideways, updateScale)
 
 const resizeObserver = new ResizeObserver(updateScale)
-onMounted(() => resizeObserver.observe(image.value!))
+onMounted(() => resizeObserver.observe(frame.value!.parentElement!))
 onBeforeUnmount(() => resizeObserver.disconnect())
+
+const frameStyle = computed(() => {
+	const { width, height } = natural.value
+	const [w, h] = sideways.value ? [height, width] : [width, height]
+	return { width: `${w * displayScale.value}px`, height: `${h * displayScale.value}px` }
+})
+const viewStyle = computed(() => ({
+	width: `${natural.value.width * displayScale.value}px`,
+	height: `${natural.value.height * displayScale.value}px`,
+	transform: `translate(-50%, -50%) rotate(${props.turns * 90}deg)`,
+}))
+
+// a screen vector (css px) → photo vector (photo px): undo the view's turn and scale
+function toPhoto(x: number, y: number): Point {
+	const angle = (props.turns * Math.PI) / 2
+	const [cos, sin] = [Math.round(Math.cos(angle)), Math.round(Math.sin(angle))]
+	return { x: (x * cos + y * sin) / displayScale.value, y: (-x * sin + y * cos) / displayScale.value }
+}
 
 function setCorner(index: number, point: Point) {
 	const next = [...quad.value!] as Quad
@@ -50,9 +77,11 @@ let dragPoint: Point = { x: 0, y: 0 } // local, since v-model updates lag one re
 let lastClient: Point = { x: 0, y: 0 }
 
 function startDrag(event: PointerEvent) {
-	if (!quad.value || event.button !== 0) return
-	const rect = image.value!.getBoundingClientRect()
-	const pointer = { x: (event.clientX - rect.left) / displayScale.value, y: (event.clientY - rect.top) / displayScale.value }
+	if (!quad.value || event.button !== 0 || (event.target as HTMLElement).closest('button')) return
+	event.preventDefault()
+	const rect = frame.value!.getBoundingClientRect()
+	const fromCenter = toPhoto(event.clientX - rect.left - rect.width / 2, event.clientY - rect.top - rect.height / 2)
+	const pointer = { x: natural.value.width / 2 + fromCenter.x, y: natural.value.height / 2 + fromCenter.y }
 	const distances = quad.value.map((corner) => Math.hypot(corner.x - pointer.x, corner.y - pointer.y))
 	selected.value = distances.indexOf(Math.min(...distances))
 	dragPoint = { ...quad.value[selected.value]! }
@@ -71,11 +100,12 @@ function drag(event: PointerEvent) {
 	const dx = locked ? event.movementX : event.clientX - lastClient.x
 	const dy = locked ? event.movementY : event.clientY - lastClient.y
 	lastClient = { x: event.clientX, y: event.clientY }
-	const speed = (event.shiftKey ? 0.1 : 1) / displayScale.value
+	const speed = event.shiftKey ? 0.1 : 1
+	const move = toPhoto(dx * speed, dy * speed)
 	const clamp = (value: number, max: number) => Math.min(Math.max(value, 0), max)
 	dragPoint = {
-		x: clamp(dragPoint.x + dx * speed, natural.value.width),
-		y: clamp(dragPoint.y + dy * speed, natural.value.height),
+		x: clamp(dragPoint.x + move.x, natural.value.width),
+		y: clamp(dragPoint.y + move.y, natural.value.height),
 	}
 	setCorner(selected.value, dragPoint)
 }
@@ -100,8 +130,10 @@ function onKey(event: KeyboardEvent) {
 	if (!delta) return
 	event.preventDefault()
 	const corner = quad.value[selected.value]!
+	// arrows move on screen: turned back into the photo, in whole photo px
+	const move = toPhoto(delta[0]! * displayScale.value, delta[1]! * displayScale.value)
 	loupeVisible.value = true
-	setCorner(selected.value, { x: corner.x + delta[0]!, y: corner.y + delta[1]! })
+	setCorner(selected.value, { x: corner.x + Math.round(move.x), y: corner.y + Math.round(move.y) })
 }
 onMounted(() => window.addEventListener('keydown', onKey))
 onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
@@ -111,7 +143,7 @@ watch([quad, selected, loupeVisible], () => loupeVisible.value && drawLoupe(), {
 
 function drawLoupe() {
 	const canvas = loupe.value
-	const img = image.value
+	const img = frame.value?.querySelector('img')
 	if (!canvas || !img || !quad.value) return
 	const dpr = window.devicePixelRatio
 	canvas.width = canvas.height = LOUPE * dpr
@@ -142,6 +174,7 @@ function drawLoupe() {
 }
 
 // loupe sits diagonally away from the corner, towards the photo's center, so it never covers the corner
+// (in photo coordinates: it turns along with the view)
 const loupeStyle = computed(() => {
 	if (!quad.value) return {}
 	const corner = quad.value[selected.value]!
@@ -153,8 +186,18 @@ const loupeStyle = computed(() => {
 </script>
 
 <template>
-	<div id="corner-editor" :class="{ dragging }" @pointerdown.prevent="startDrag" @pointermove="drag" @pointerup="endDrag" @pointercancel="endDrag">
-		<img ref="image" :src="props.src" alt="captured photo" draggable="false" @load="onLoad" />
+	<div
+		id="corner-editor"
+		ref="frame"
+		:class="{ dragging }"
+		:style="frameStyle"
+		@pointerdown="startDrag"
+		@pointermove="drag"
+		@pointerup="endDrag"
+		@pointercancel="endDrag"
+	>
+		<div class="view" :style="viewStyle">
+		<img :src="props.src" alt="captured photo" draggable="false" @load="onLoad" @dragstart.prevent />
 		<svg v-if="natural.width && quad" :viewBox="`0 0 ${natural.width} ${natural.height}`" preserveAspectRatio="none">
 			<polygon :points="points" />
 			<circle
@@ -169,13 +212,16 @@ const loupeStyle = computed(() => {
 			</circle>
 		</svg>
 		<canvas v-show="loupeVisible" ref="loupe" :style="loupeStyle" />
+		</div>
+		<button type="button" class="turn left" title="Turn left (painting photographed sideways)" @click="emit('turn', -1)">↺</button>
+		<button type="button" class="turn right" title="Turn right (painting photographed sideways)" @click="emit('turn', 1)">↻</button>
 	</div>
 </template>
 
 <style>
 #corner-editor {
 	position: relative;
-	display: inline-block;
+	overflow: hidden;
 	touch-action: none;
 	user-select: none;
 	cursor: crosshair;
@@ -184,10 +230,40 @@ const loupeStyle = computed(() => {
 		cursor: none;
 	}
 
+	& .view {
+		position: absolute;
+		left: 50%;
+		top: 50%;
+	}
+
 	& img {
 		display: block;
-		max-width: 100%;
-		max-height: 75vh;
+		width: 100%;
+		height: 100%;
+	}
+
+	& .turn {
+		position: absolute;
+		bottom: var(--gap);
+		width: 3.5rem;
+		height: 3.5rem;
+		border-radius: 50%;
+		font-size: 2rem;
+		line-height: 1;
+		opacity: 0.6;
+		cursor: pointer;
+
+		&:hover {
+			opacity: 0.9;
+		}
+
+		&.left {
+			left: var(--gap);
+		}
+
+		&.right {
+			right: var(--gap);
+		}
 	}
 
 	& svg {

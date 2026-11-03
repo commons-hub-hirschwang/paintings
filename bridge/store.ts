@@ -16,7 +16,8 @@ export type LocalPainting = {
 	// stack and position in it: "A #3"
 	group: string
 	number: number
-	// crop of the original photo around the corners (original.jpg) + corners within it, for later corrections
+	material?: string // e.g. "Leinwand"
+	// crop of the (lens-corrected) photo around the corners (original.jpg) + corners within it, for later corrections
 	original?: { photo: string; crop: { left: number; top: number; width: number; height: number }; quad: Quad }
 }
 

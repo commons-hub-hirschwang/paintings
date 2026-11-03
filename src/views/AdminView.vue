@@ -3,7 +3,7 @@ import { computed, ref, watch } from 'vue'
 import LoginGate from '@/components/LoginGate.vue'
 import { authed, user } from '@/auth'
 import { imageUrl } from '@/api'
-import { paintingStatuses, stackLabel, type AdminPainting, type PaintingStatus, type UploadKey } from '../../shared/types'
+import { paintingStatuses, sizeLabel, stackLabel, type AdminPainting, type PaintingStatus, type UploadKey } from '../../shared/types'
 import { priceExamples, priceFunction, priceVariables, type PriceFn } from '../../shared/pricing'
 import { functions } from '../../shared/expr'
 
@@ -97,7 +97,7 @@ const date = (seconds: number | null) => (seconds ? new Date(seconds * 1000).toL
 								@keydown.enter="($event.target as HTMLInputElement).blur()"
 							/>
 						</td>
-						<td>{{ painting.width_cm }} × {{ painting.height_cm }}</td>
+						<td>{{ sizeLabel(painting) }}</td>
 						<td>
 							{{ painting.rating?.toFixed(1) ?? '–' }}
 							<span class="muted">({{ painting.ratings }})</span>

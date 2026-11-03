@@ -26,14 +26,24 @@ capture.post('/paintings', async (c) => {
 		height_cm?: number
 		group_name?: string
 		number?: number
+		material?: string
 	}>()
 	if (!body.id) return c.json({ error: 'id required' }, 400)
 	await c.env.DB.prepare(
-		`INSERT INTO paintings (id, title, width_cm, height_cm, group_name, number) VALUES (?, ?, ?, ?, ?, ?)
+		`INSERT INTO paintings (id, title, width_cm, height_cm, group_name, number, material) VALUES (?, ?, ?, ?, ?, ?, ?)
 		 ON CONFLICT (id) DO UPDATE SET width_cm = excluded.width_cm, height_cm = excluded.height_cm,
-			group_name = excluded.group_name, number = excluded.number`,
+			group_name = excluded.group_name, number = excluded.number,
+			material = COALESCE(excluded.material, paintings.material)`,
 	)
-		.bind(body.id, body.title ?? '', body.width_cm ?? null, body.height_cm ?? null, body.group_name ?? null, body.number ?? null)
+		.bind(
+			body.id,
+			body.title ?? '',
+			body.width_cm ?? null,
+			body.height_cm ?? null,
+			body.group_name ?? null,
+			body.number ?? null,
+			body.material || null,
+		)
 		.run()
 	return c.json({ id: body.id }, 201)
 })

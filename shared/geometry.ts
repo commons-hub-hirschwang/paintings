@@ -13,12 +13,19 @@ export type Point = { x: number; y: number }
 // clockwise from top-left: TL, TR, BR, BL — in pixels of the (EXIF-oriented) photo
 export type Quad = [Point, Point, Point, Point]
 
-// photo size (EXIF-oriented) and focal length in pixels (null: unknown)
-export type Camera = { width: number; height: number; focalPx: number | null }
+// photo size (EXIF-oriented) and focal length in pixels (null: unknown). Coordinates are those of the
+// lens-corrected photo when `lens` is set (bridge/lens.ts), so the pinhole model holds.
+export type Camera = {
+	width: number
+	height: number
+	focalPx: number | null
+	lens?: { model: string; focalMm: number; cameraCrop: number | null } | null
+}
 
 // pxPerCm: at the calibration depth for a frontal painting (also the fallback without focal length)
 // centerDepthCm: distance camera → center of the measured painting along the optical axis
-export type Calibration = { pxPerCm: number; createdAt: number; centerDepthCm?: number; focalPx?: number }
+// lensCorrected: made on a lens-corrected photo (bridge/lens.ts)
+export type Calibration = { pxPerCm: number; createdAt: number; centerDepthCm?: number; focalPx?: number; lensCorrected?: boolean }
 
 type Vec = [number, number, number]
 const sub = (a: Vec, b: Vec): Vec => [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
@@ -107,3 +114,7 @@ export function rectifiedSize([tl, tr, br, bl]: Quad, widthCm: number, heightCm:
 	)
 	return { width: Math.round(widthCm * pxPerCm), height: Math.round(heightCm * pxPerCm) }
 }
+
+// The view turned clockwise by `turns` quarter turns (painting photographed sideways): the corners, or any
+// per-side values (top, right, bottom, left), in the painting's orientation. TL is always the painting's top left.
+export const turnCorners = <T>(items: T[], turns: number): T[] => items.map((_, i) => items[(((i - turns) % 4) + 4) % 4]!)

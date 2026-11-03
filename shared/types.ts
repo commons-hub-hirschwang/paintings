@@ -12,7 +12,15 @@ export type Painting = {
 	// physical stack and position in it, e.g. group "A", number 3 → "A #3"
 	group_name: string | null
 	number: number | null
+	// e.g. "Leinwand", "Öl auf Leinwand" (set at capture)
+	material: string | null
 }
+
+// "100 × 75 cm · Leinwand"
+export const sizeLabel = (p: Pick<Painting, 'width_cm' | 'height_cm' | 'material'>) =>
+	[p.width_cm !== null && p.height_cm !== null ? `${p.width_cm} × ${p.height_cm} cm` : '', p.material ?? '']
+		.filter(Boolean)
+		.join(' · ')
 
 export const stackLabel = (p: Pick<Painting, 'group_name' | 'number'>) =>
 	p.group_name !== null && p.number !== null ? `${p.group_name} #${p.number}` : ''

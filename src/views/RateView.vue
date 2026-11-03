@@ -4,7 +4,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import LoginGate from '@/components/LoginGate.vue'
 import { authed, user } from '@/auth'
 import { imageUrl } from '@/api'
-import { canName, stackLabel, type RatePainting } from '../../shared/types'
+import { canName, sizeLabel, stackLabel, type RatePainting } from '../../shared/types'
 
 const paintings = ref<RatePainting[]>([])
 const currentId = ref<string | null>(null)
@@ -105,7 +105,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 					<p v-else>
 						<strong>{{ current.title || 'Untitled' }}</strong> <span class="muted">{{ stackLabel(current) }}</span>
 					</p>
-					<p class="muted">{{ current.width_cm }} × {{ current.height_cm }} cm</p>
+					<p class="muted">{{ sizeLabel(current) }}</p>
 					<p class="muted">
 						{{ rated.length }} of {{ paintings.length }} rated<br />
 						Keys 1–9, 0 = 10, Esc closes. Image opens in full detail.

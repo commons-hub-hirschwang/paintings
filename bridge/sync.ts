@@ -12,10 +12,10 @@ const upload = async (id: string, variant: 'archive' | 'original', file: Buffer)
 const postPainting = (p: LocalPainting) =>
 	api('/paintings', {
 		method: 'POST',
-		...json({ id: p.id, title: p.title, width_cm: p.widthCm, height_cm: p.heightCm, group_name: p.group, number: p.number }),
+		...json({ id: p.id, title: p.title, width_cm: p.widthCm, height_cm: p.heightCm, group_name: p.group, number: p.number, material: p.material }),
 	})
 
-// Upload all local paintings the gallery doesn't have yet; metadata (group, number, size) of the others is
+// Upload all local paintings the gallery doesn't have yet; metadata (group, number, size, material) of the others is
 // re-sent (cheap; the title only counts on first upload). Idempotent: safe to rerun after failures.
 export async function syncAll(log: (line: string) => void = () => {}) {
 	const { galleryUrl } = getSettings()

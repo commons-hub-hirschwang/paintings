@@ -57,6 +57,13 @@ select {
 	background: transparent;
 }
 
+/* select and its (native) option list in the page colors: the list is not transparent */
+select,
+option {
+	background: var(--bg);
+	color: var(--fg);
+}
+
 button,
 .button,
 select {

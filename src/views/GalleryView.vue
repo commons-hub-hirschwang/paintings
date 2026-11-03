@@ -2,6 +2,7 @@
 import { ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import { fetchPaintings, formatPrice, imageUrl, type PublicPainting } from '@/api'
+import { sizeLabel } from '../../shared/types'
 
 const paintings = ref<PublicPainting[]>([])
 fetchPaintings().then((list) => (paintings.value = list))
@@ -15,7 +16,7 @@ fetchPaintings().then((list) => (paintings.value = list))
 			<img :src="imageUrl(painting, 'thumb')" :alt="painting.title" loading="lazy" />
 			<figcaption>
 				{{ painting.title || 'Untitled' }}
-				<span class="muted">{{ painting.width_cm }} × {{ painting.height_cm }} cm</span>
+				<span class="muted">{{ sizeLabel(painting) }}</span>
 				<span>{{ painting.status === 'available' ? formatPrice(painting.price) : painting.status }}</span>
 			</figcaption>
 			</figure>
