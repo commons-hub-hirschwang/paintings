@@ -20,12 +20,12 @@ async function load() {
 }
 watch(user, (u) => u && load().catch((e) => (error.value = e.message)), { immediate: true })
 
-// next unrated painting after the current one (wrapping); once all are rated, simply the next painting
+// next unrated painting after the current one (wrapping); once all are rated, null: the overlay closes
 function next() {
 	const list = paintings.value
 	const start = list.findIndex((p) => p.id === currentId.value)
 	const ordered = [...list.slice(start + 1), ...list.slice(0, start + 1)]
-	return (ordered.find((p) => p.my_score === null) ?? ordered[0])?.id ?? null
+	return ordered.find((p) => p.my_score === null)?.id ?? null
 }
 
 async function rate(score: number) {
