@@ -40,6 +40,15 @@ admin.put('/pricing', async (c) => {
 	return c.json({ ok: true })
 })
 
+// status of many paintings at once (selection on /admin)
+admin.patch('/paintings', async (c) => {
+	const { ids, status } = await c.req.json<{ ids: string[]; status: Painting['status'] }>()
+	if (!paintingStatuses.includes(status)) return c.json({ error: 'invalid status' }, 400)
+	if (!Array.isArray(ids) || !ids.length) return c.json({ error: 'no paintings selected' }, 400)
+	await c.env.DB.batch(ids.map((id) => c.env.DB.prepare(`UPDATE paintings SET status = ? WHERE id = ?`).bind(status, id)))
+	return c.json({ ok: true })
+})
+
 admin.patch('/paintings/:id', async (c) => {
 	const body = await c.req.json<Partial<Pick<Painting, 'title' | 'width_cm' | 'height_cm' | 'status'>>>()
 	if (body.status && !paintingStatuses.includes(body.status)) return c.json({ error: 'invalid status' }, 400)

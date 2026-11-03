@@ -62,6 +62,21 @@ const rename = (painting: AdminPainting, title: string) =>
 const setStatus = (painting: AdminPainting, status: PaintingStatus) =>
 	act(() => authed(`/api/admin/paintings/${painting.id}`, { method: 'PATCH', body: JSON.stringify({ status }) }))
 
+// selection (checkboxes on the right) → status of all selected at once
+const selected = ref(new Set<string>())
+const allSelected = computed(() => paintings.value.length > 0 && paintings.value.every((p) => selected.value.has(p.id)))
+function toggle(id: string) {
+	const next = new Set(selected.value)
+	if (!next.delete(id)) next.add(id)
+	selected.value = next
+}
+const toggleAll = () => (selected.value = new Set(allSelected.value ? [] : paintings.value.map((p) => p.id)))
+const setSelectedStatus = (status: PaintingStatus) =>
+	act(async () => {
+		await authed('/api/admin/paintings', { method: 'PATCH', body: JSON.stringify({ ids: [...selected.value], status }) })
+		selected.value = new Set()
+	})
+
 const createKey = () =>
 	act(async () => {
 		newKey.value = await authed('/api/admin/keys', { method: 'POST', body: JSON.stringify({ name: keyName.value }) })
@@ -81,6 +96,16 @@ const date = (seconds: number | null) => (seconds ? new Date(seconds * 1000).toL
 
 			<section>
 				<h2>Paintings ({{ paintings.length }})</h2>
+				<div v-if="selected.size" class="actions bulk">
+					<label>
+						Status of {{ selected.size }} selected
+						<select value="" @change="setSelectedStatus(($event.target as HTMLSelectElement).value as PaintingStatus)">
+							<option value="" disabled>set to…</option>
+							<option v-for="status in paintingStatuses" :key="status">{{ status }}</option>
+						</select>
+					</label>
+					<button @click="selected = new Set()">Clear selection</button>
+				</div>
 				<table>
 					<tr>
 						<th></th>
@@ -90,6 +115,9 @@ const date = (seconds: number | null) => (seconds ? new Date(seconds * 1000).toL
 						<th>Rating</th>
 						<th>Price{{ changed ? ' (preview)' : '' }}</th>
 						<th>Status</th>
+						<th>
+							<input type="checkbox" class="pick" :checked="allSelected" title="Select all" @change="toggleAll" />
+						</th>
 					</tr>
 					<tr v-for="painting in paintings" :key="painting.id">
 						<td>
@@ -114,6 +142,9 @@ const date = (seconds: number | null) => (seconds ? new Date(seconds * 1000).toL
 							<select :value="painting.status" @change="setStatus(painting, ($event.target as HTMLSelectElement).value as PaintingStatus)">
 								<option v-for="status in paintingStatuses" :key="status">{{ status }}</option>
 							</select>
+						</td>
+						<td>
+							<input type="checkbox" class="pick" :checked="selected.has(painting.id)" @change="toggle(painting.id)" />
 						</td>
 					</tr>
 				</table>
@@ -192,6 +223,17 @@ const date = (seconds: number | null) => (seconds ? new Date(seconds * 1000).toL
 			height: 4rem;
 			object-fit: contain;
 		}
+
+		/* selection: large, easy to hit in a row */
+		& .pick {
+			width: 1.6rem;
+			height: 1.6rem;
+			cursor: pointer;
+		}
+	}
+
+	& .bulk {
+		align-items: flex-end;
 	}
 
 	& .pricing {
