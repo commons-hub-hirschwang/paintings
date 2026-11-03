@@ -336,7 +336,9 @@ const cm = (value: number) => value.toFixed(1)
 					<figcaption>
 						<span><strong>{{ label(painting) }}</strong> {{ painting.title || 'Untitled' }}</span>
 						<span class="muted">
-							{{ cm(painting.widthCm) }} × {{ cm(painting.heightCm) }} cm · {{ painting.isSynced ? 'synced' : 'not synced' }}
+							{{ cm(painting.widthCm) }} × {{ cm(painting.heightCm) }} cm ·
+							<template v-if="painting.material">{{ painting.material }} · </template>
+							{{ painting.isSynced ? 'synced' : 'not synced' }}
 						</span>
 					</figcaption>
 				</figure>

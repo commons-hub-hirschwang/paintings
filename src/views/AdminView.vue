@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import LoginGate from '@/components/LoginGate.vue'
 import { authed, user } from '@/auth'
 import { imageUrl } from '@/api'
@@ -38,6 +38,13 @@ async function load() {
 
 const savePricing = () => act(() => authed('/api/admin/pricing', { method: 'PUT', body: JSON.stringify({ formula: formula.value }) }))
 watch(user, (u) => u?.role === 'admin' && load().catch((e) => (error.value = e.message)), { immediate: true })
+
+// live view: paintings arriving from a capture sync (or changed elsewhere) show up without reloading
+const LIVE_INTERVAL = 10_000
+const live = setInterval(() => {
+	if (user.value?.role === 'admin' && document.visibilityState === 'visible') load().catch(() => {})
+}, LIVE_INTERVAL)
+onBeforeUnmount(() => clearInterval(live))
 
 async function act(task: () => Promise<unknown>) {
 	error.value = ''
