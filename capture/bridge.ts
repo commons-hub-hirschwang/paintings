@@ -25,6 +25,7 @@ export type ColorCalibration = {
 	fNumber: number
 	gains: [number, number, number]
 	box: Box
+	target?: number
 	white: number
 	createdAt: number
 	warnings: string[]
@@ -61,8 +62,8 @@ export const bridge = {
 	capture: () => call<Photo>('/capture', { method: 'POST' }),
 	upload: (file: File) => call<Photo>('/upload', { method: 'POST', body: file }),
 	detect: (file: string, quad: Quad) => call<Detection>('/detect', json({ file, quad })),
-	colorReference: () => call<{ file: string; previous: ColorCalibration | null }>('/color/reference', { method: 'POST' }),
-	calibrateColor: (file: string, box: Box) => call<ColorCalibration>('/color/calibrate', json({ file, box })),
+	colorReference: (iso: number) => call<{ file: string; previous: ColorCalibration | null }>('/color/reference', json({ iso })),
+	calibrateColor: (file: string, box: Box, white: number) => call<ColorCalibration>('/color/calibrate', json({ file, box, white })),
 	colorShotUrl: (file: string) => `/bridge/color/shot/${encodeURIComponent(file)}`,
 	colorImageUrl: (name: 'reference.jpg' | 'patch.jpg', version: number) => `/bridge/color/${name}?v=${version}`,
 	forgetCalibration: () => call('/calibration', { method: 'DELETE' }),

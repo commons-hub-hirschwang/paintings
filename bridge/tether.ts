@@ -1,5 +1,6 @@
 // The tethered camera (gphoto2). Paintings are photographed with fixed settings, so their brightness and colour stay
-// comparable: edit `fixedSettings` to change them. Shutter and colour temperature come from the colour calibration.
+// comparable: edit `fixedSettings` to change them. ISO (chosen in the UI), shutter and colour temperature belong to the
+// colour calibration.
 //
 // Sony specifics: the exposure program follows the physical dial (setting it via USB is silently ignored), and the
 // other values are read-only unless the dial is on M. Written values take a moment to show up in reads, so what the
@@ -13,7 +14,6 @@ import type { Exposure } from './camera'
 const run = promisify(execFile)
 
 export const fixedSettings = {
-	iso: 100,
 	fNumber: 5.6,
 	dro: 'Off', // Sony's automatic contrast changes per image
 	quality: 'RAW+JPEG (X.Fine)', // the RAW keeps exposure and colour correctable later; 'Extra Fine' for JPEG only
@@ -30,7 +30,9 @@ export const shutterSeconds = (speed: string) => {
 	return Number(a) / Number(b ?? 1)
 }
 
-export type CameraExposure = { shutter: string; kelvin: number }
+export const isoChoices = [100, 200, 400, 800]
+
+export type CameraExposure = { shutter: string; kelvin: number; iso: number }
 
 // A camera that does not fire (asleep, no focus) is given up on instead of hanging for minutes. A capture may take long:
 // up to 8 s exposure + the RAW download. SIGTERM (not SIGKILL) lets gphoto2 cancel and close the PTP session — a killed
@@ -81,7 +83,6 @@ export async function setFixedSettings() {
 	const program = /Current: (.*)/.exec(await gphoto2(['--get-config', 'expprogram']))?.[1]
 	if (program !== 'M') throw new Error(`turn the camera's mode dial to M (it is on "${program}")`)
 	await gphoto2([
-		'--set-config', `iso=${fixedSettings.iso}`,
 		'--set-config', `f-number=f/${fixedSettings.fNumber}`,
 		'--set-config', `dro=${fixedSettings.dro}`,
 		'--set-config', `imagequality=${fixedSettings.quality}`,
@@ -92,6 +93,7 @@ export async function setFixedSettings() {
 
 export async function setExposure(exposure: CameraExposure) {
 	const args: string[] = []
+	if (exposure.iso !== current?.iso) args.push('--set-config', `iso=${exposure.iso}`)
 	if (exposure.shutter !== current?.shutter) args.push('--set-config', `shutterspeed=${exposure.shutter}`)
 	// writable only once the white balance mode has arrived: a separate call, retried
 	if (exposure.kelvin !== current?.kelvin) args.push('--set-config', `colortemperature=${exposure.kelvin}`)
@@ -122,11 +124,11 @@ export async function shoot(dir: string): Promise<string> {
 }
 
 // what differs between the photo's EXIF and the locked settings
-export function exposureMismatch(actual: Exposure | null, shutter: string) {
+export function exposureMismatch(actual: Exposure | null, { shutter, iso }: { shutter: string; iso: number }) {
 	if (!actual) return ['no exposure data in this photo']
 	const problems = []
 	if (actual.program !== 1) problems.push('mode dial is not on M')
-	if (actual.iso !== fixedSettings.iso) problems.push(`ISO ${actual.iso} instead of ${fixedSettings.iso}`)
+	if (actual.iso !== iso) problems.push(`ISO ${actual.iso} instead of ${iso}`)
 	if (Math.abs(actual.fNumber - fixedSettings.fNumber) > 0.05) problems.push(`f/${actual.fNumber} instead of f/${fixedSettings.fNumber}`)
 	if (Math.abs(Math.log2(actual.shutter / shutterSeconds(shutter))) > 0.15) problems.push(`shutter ${actual.shutter} s instead of ${shutter} s`)
 	return problems

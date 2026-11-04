@@ -3,12 +3,14 @@
 // magnifier shown, Shift = 1/10 speed). Arrow keys nudge the selected corner by 1 px (Shift: 10 px), keys 1–4 select.
 // The view can be turned in quarter turns (painting photographed sideways): the parent turns the corner order
 // along (turnCorners), the photo itself stays as it is; all screen input is turned back into photo coordinates.
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
+import OverexposureMarks from './OverexposureMarks.vue'
 import type { Point, Quad } from '../shared/geometry'
 
 const props = defineProps<{ src: string; turns: number }>() // turns: clockwise quarter turns of the view
 const quad = defineModel<Quad | null>({ required: true }) // null until the parent sets corners on `loaded`
 const emit = defineEmits<{ loaded: [size: { width: number; height: number }]; turn: [direction: 1 | -1] }>()
+const photo = shallowRef<HTMLImageElement | null>(null)
 
 const LOUPE = 220 // css px
 const ZOOM = 2 // loupe css px per photo px
@@ -28,6 +30,7 @@ const handleRadius = computed(() => 14 / displayScale.value)
 
 function onLoad(event: Event) {
 	const img = event.target as HTMLImageElement
+	photo.value = img
 	natural.value = { width: img.naturalWidth, height: img.naturalHeight }
 	updateScale()
 	emit('loaded', natural.value)
@@ -198,6 +201,7 @@ const loupeStyle = computed(() => {
 	>
 		<div class="view" :style="viewStyle">
 		<img :src="props.src" alt="captured photo" draggable="false" @load="onLoad" @dragstart.prevent />
+		<OverexposureMarks :image="photo" />
 		<svg v-if="natural.width && quad" :viewBox="`0 0 ${natural.width} ${natural.height}`" preserveAspectRatio="none">
 			<polygon :points="points" />
 			<circle
@@ -211,7 +215,7 @@ const loupeStyle = computed(() => {
 				<title>{{ index + 1 }}: {{ labels[index] }}</title>
 			</circle>
 		</svg>
-		<canvas v-show="loupeVisible" ref="loupe" :style="loupeStyle" />
+		<canvas v-show="loupeVisible" ref="loupe" class="loupe" :style="loupeStyle" />
 		</div>
 		<button type="button" class="turn left" title="Turn left (painting photographed sideways)" @click="emit('turn', -1)">↺</button>
 		<button type="button" class="turn right" title="Turn right (painting photographed sideways)" @click="emit('turn', 1)">↻</button>
@@ -274,7 +278,7 @@ const loupeStyle = computed(() => {
 		overflow: visible;
 
 		& polygon {
-			fill: rgba(255, 220, 0, 0.08);
+			fill: none;
 			stroke: rgb(255, 220, 0);
 			stroke-width: 1.5px;
 			vector-effect: non-scaling-stroke;
@@ -292,7 +296,7 @@ const loupeStyle = computed(() => {
 		}
 	}
 
-	& canvas {
+	& .loupe {
 		position: absolute;
 		border-radius: 50%;
 		border: 2px solid #fff;

@@ -1,5 +1,5 @@
 // Colour calibration: a white area of a painting, photographed in the session's light, sets the shutter speed (white
-// lands at TARGET_WHITE, whites no longer turn grey) and the white balance (that area becomes neutral). The result
+// lands at the chosen level, whites no longer turn grey) and the white balance (that area becomes neutral). The result
 // applies to all following paintings alike: nothing is adjusted per painting, so a painting's own colour bias stays.
 //
 // White balance has two parts: the camera's colour temperature does amber↔blue without loss (also in the RAW), and
@@ -10,25 +10,29 @@ import { basename } from 'node:path'
 import sharp from 'sharp'
 import { exposureOf } from './camera'
 import { projectPath } from './project'
-import { currentExposure, exposureMismatch, fixedSettings, setExposure, setFixedSettings, shoot, shutterSeconds, shutterSpeeds, type CameraExposure } from './tether'
+import { currentExposure, exposureMismatch, fixedSettings, isoChoices, setExposure, setFixedSettings, shoot, shutterSeconds, shutterSpeeds, type CameraExposure } from './tether'
 import { readOriented } from './warp'
 
 export type Box = { left: number; top: number; width: number; height: number }
 export type Gains = [r: number, g: number, b: number]
 export type ColorCalibration = CameraExposure & {
-	iso: number
 	fNumber: number
 	gains: Gains
 	box: Box // the white area in the photo; recalibrate with the same painting and area
-	white: number // brightness of the area in the final photo (0–255)
+	target: number // the chosen brightness of the area (0–255)
+	white: number // the brightness it got
 	createdAt: number
 	warnings: string[]
 }
 
-const TARGET_WHITE = 242 // 0–255, leaves room for anything brighter than the calibration white
+export const DEFAULT_WHITE = 242 // 0–255, leaves room for anything brighter than the calibration white
+const WHITE_RANGE = [180, 248] // above: too close to where the measurement counts as clipped
+// the shutter only has third stops: the gains close the rest of the way to the chosen level, at most this far
+const FINE_EXPOSURE = 2 ** (1 / 3)
 const LAST_FLICKER_FREE = 1 / 50 // shorter exposures can show the flicker of mains-powered lights
 const MAX_SHOTS = 6
-const START: CameraExposure = { shutter: '1/10', kelvin: 5000 }
+const START = { shutter: '1/2', kelvin: 5000 } // at DEFAULT_ISO
+export const DEFAULT_ISO = 400
 
 // mired = 1e6 / kelvin; change of ln(red/blue) per mired, a first guess, then measured from the shots
 const RED_BLUE_PER_MIRED = -0.006
@@ -105,11 +109,14 @@ const nearestShutter = (seconds: number) =>
 
 // A shot to mark the white area in. The light is unknown in manual mode, so the shutter is first brought to where the
 // photo shows something: its brightest parts mid to high, measured over the whole frame.
-export async function takeReference() {
+export async function takeReference(iso: number) {
+	if (!isoChoices.includes(iso)) throw new Error(`ISO ${iso} is not one of ${isoChoices.join(', ')}`)
 	await rm(shots(), { recursive: true, force: true })
 	const previous = await readColorCalibration()
 	await setFixedSettings()
-	let exposure: CameraExposure = previous ? { shutter: previous.shutter, kelvin: previous.kelvin } : START
+	// from the last calibration's light, whatever its ISO was
+	const start = previous ?? { ...START, iso: DEFAULT_ISO }
+	let exposure: CameraExposure = { shutter: nearestShutter((shutterSeconds(start.shutter) * start.iso) / iso), kelvin: start.kelvin, iso }
 	let file = ''
 	for (let attempt = 0; attempt < 4; attempt++) {
 		await setExposure(exposure)
@@ -130,7 +137,8 @@ export async function takeReference() {
 const shootRetrying = () => shoot(shots()).catch(() => shoot(shots()))
 
 // From the marked area in the reference shot to shutter + colour temperature (reshooting until they settle) and gains.
-export async function calibrateColor(file: string, box: Box): Promise<ColorCalibration> {
+export async function calibrateColor(file: string, box: Box, target = DEFAULT_WHITE): Promise<ColorCalibration> {
+	if (!(target >= WHITE_RANGE[0]! && target <= WHITE_RANGE[1]!)) throw new Error(`white level must be ${WHITE_RANGE.join('–')}`)
 	let exposure = currentExposure()
 	if (!exposure) throw new Error('the camera was reset in between — take the reference photo again')
 	if (box.width < 8 || box.height < 8) throw new Error('mark a larger white area')
@@ -147,7 +155,7 @@ export async function calibrateColor(file: string, box: Box): Promise<ColorCalib
 		// shutter: clipped means the real value is unknown, so step down until it isn't
 		const seconds = shutterSeconds(exposure.shutter)
 		const clipped = Math.max(...rgb) >= 250
-		const shutter: string = nearestShutter(clipped ? seconds / 2 : (seconds * toLinear(TARGET_WHITE)) / Math.max(white, 0.001))
+		const shutter: string = nearestShutter(clipped ? seconds / 2 : (seconds * toLinear(target)) / Math.max(white, 0.001))
 
 		// colour temperature: where ln(red/blue) reaches 0, along the slope measured between the last two shots
 		const redBlue = Math.log(Math.max(r, 0.001) / Math.max(b, 0.001))
@@ -163,13 +171,13 @@ export async function calibrateColor(file: string, box: Box): Promise<ColorCalib
 		const settled = shutter === exposure.shutter && kelvin === exposure.kelvin
 		if (settled || shot === MAX_SHOTS) {
 			const warnings = reviewCalibration({ white, rgb, spread, seconds, settled, linear })
-			return saveCalibration(image, box, exposure, linear, fromLinear(white), warnings)
+			return saveCalibration(image, box, exposure, linear, target, warnings)
 		}
-		exposure = { shutter, kelvin }
+		exposure = { shutter, kelvin, iso: exposure.iso }
 		await setExposure(exposure)
 		photo = await shootRetrying()
 		// every measurement must come from a photo really taken with these settings
-		const mismatch = exposureMismatch(await exposureOf(photo), exposure.shutter)
+		const mismatch = exposureMismatch(await exposureOf(photo), exposure)
 		if (mismatch.length) throw new Error(`the camera didn't take the settings: ${mismatch.join(', ')}`)
 	}
 }
@@ -183,22 +191,23 @@ function reviewCalibration({ white, rgb, spread, seconds, settled, linear }: { w
 	if (!settled) warnings.push('Exposure and colour did not fully settle — is the light changing?')
 	if (off > 0.15) warnings.push(`Large colour correction left (${Math.round(off * 100)} %) — mixed light, or a white that isn't neutral?`)
 	if (seconds < LAST_FLICKER_FREE) warnings.push('Shutter faster than 1/50 s: mains-powered lights can flicker into the brightness. Fine in daylight.')
-	if (seconds > 1) warnings.push('Long exposure: avoid touching the camera or tripod.')
+	if (seconds > 1) warnings.push('Long exposure: avoid touching the camera or tripod. A higher ISO shortens it.')
 	return warnings
 }
 
-async function saveCalibration(image: { data: Buffer; width: number; height: number }, box: Box, exposure: CameraExposure, linear: Gains, white: number, warnings: string[]) {
+async function saveCalibration(image: { data: Buffer; width: number; height: number }, box: Box, exposure: CameraExposure, linear: Gains, target: number, warnings: string[]) {
 	await mkdir(dir(), { recursive: true })
 	const [r, g, b] = linear
-	const level = luminance(r, g, b)
+	const measured = luminance(r, g, b)
+	const level = measured * Math.min(FINE_EXPOSURE, Math.max(1 / FINE_EXPOSURE, toLinear(target) / Math.max(measured, 0.001)))
 	const gains: Gains = [level / Math.max(r, 0.001), level / Math.max(g, 0.001), level / Math.max(b, 0.001)]
 	const calibration: ColorCalibration = {
 		...exposure,
-		iso: fixedSettings.iso,
 		fNumber: fixedSettings.fNumber,
 		gains,
 		box,
-		white: Math.round(white),
+		target,
+		white: Math.round(fromLinear(level)),
 		createdAt: Date.now(),
 		warnings,
 	}

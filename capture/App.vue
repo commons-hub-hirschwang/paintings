@@ -231,6 +231,7 @@ const cm = (value: number) => value.toFixed(1)
 <template>
 	<main id="capture">
 		<header>
+			<div>
 			<h1>Capture</h1>
 			<select v-if="status?.projects.length" :value="status.project ?? ''" @change="openProject(($event.target as HTMLSelectElement).value)">
 				<option v-if="!status.project" value="" disabled>Open project…</option>
@@ -240,6 +241,9 @@ const cm = (value: number) => value.toFixed(1)
 				<input v-model="newProject" placeholder="New project, e.g. attic" required />
 				<button type="submit">Create</button>
 			</form>
+			</div>
+			<div>
+			<button @click="refreshStatus">Refresh</button>
 			<span v-if="status?.project" class="muted">
 				Camera: {{ status.cameras[0] ?? 'none detected' }} ·
 				{{
@@ -252,11 +256,11 @@ const cm = (value: number) => value.toFixed(1)
 				·
 				{{ color ? `colour: ${color.shutter} s, f/${color.fNumber}, ISO ${color.iso}, ${color.kelvin} K (${age(color.createdAt)})` : 'colour not calibrated' }}
 			</span>
-			<template v-if="status?.project">
+			</div>
+			<div v-if="status?.project">
 				<button :disabled="!!busy" @click="calibratingColor = true">Calibrate colour</button>
 				<button v-if="calibration" :disabled="!!busy" @click="askReuse = true">Calibrate distance</button>
-			</template>
-			<button @click="refreshStatus">Refresh</button>
+			</div>
 		</header>
 
 
@@ -435,9 +439,15 @@ const cm = (value: number) => value.toFixed(1)
 
 	& header {
 		display: flex;
-		flex-wrap: wrap;
-		align-items: baseline;
+		flex-direction: column;
 		gap: var(--gap);
+
+		& > div {
+			display: flex;
+			flex-wrap: wrap;
+			align-items: baseline;
+			gap: var(--gap);
+		}
 	}
 
 	& .editor {

@@ -18,7 +18,7 @@ import { listPaintings, nextNumber, paintingFile, savePainting } from './store'
 import { isSynced, syncAll } from './sync'
 import { addGroup, currentProject, listGroups, listProjects, openProject, projectPath } from './project'
 import { correctLens, readOriented, warpToRectangle } from './warp'
-import { applyGains, calibrateColor, colorFile, correctionFor, measure, readColorCalibration, shotFile, takeReference, type Box } from './color'
+import { applyGains, calibrateColor, colorFile, correctionFor, DEFAULT_ISO, measure, readColorCalibration, shotFile, takeReference, type Box, type ColorCalibration } from './color'
 import { ensureLocked, exclusive, exposureMismatch, forgetCameraState, shoot } from './tether'
 import { cameraOf, exposureOf, lensOf } from './camera'
 import { detectCorners, trusted } from './detect'
@@ -91,18 +91,20 @@ app.get('/status', async (c) => {
 })
 
 // what the photographer should know about a shot: settings that didn't hold, blown-out highlights in the painting
-async function shotWarnings(file: string, shutter: string, detection: Awaited<ReturnType<typeof photoResult>>['detection']) {
+async function shotWarnings(file: string, color: ColorCalibration, detection: Awaited<ReturnType<typeof photoResult>>['detection']) {
 	const raw = join(dirs.raw, basename(file))
-	const mismatch = exposureMismatch(await exposureOf(raw), shutter)
+	const mismatch = exposureMismatch(await exposureOf(raw), color)
 	if (mismatch.length) forgetCameraState() // set everything again before the next capture
 	const warnings = mismatch.length ? [`Not the calibrated settings: ${mismatch.join(', ')} — not colour corrected.`] : []
-	if (detection) {
-		const xs = detection.quad.map((p) => p.x)
-		const ys = detection.quad.map((p) => p.y)
-		const box = { left: Math.min(...xs), top: Math.min(...ys), width: Math.max(...xs) - Math.min(...xs), height: Math.max(...ys) - Math.min(...ys) }
-		const { clippedShare } = measure(await readOriented(raw), box)
-		if (clippedShare > 0.001) warnings.push(`${(clippedShare * 100).toFixed(1)} % of the painting is blown out (brighter than the calibration white).`)
-	}
+	// measured as it will be saved (with the gains), at full resolution: the painting, or the whole photo if it wasn't found
+	const image = await readOriented(raw)
+	if (!mismatch.length) applyGains(image.data, color.gains)
+	const xs = detection?.quad.map((p) => p.x) ?? [0, image.width]
+	const ys = detection?.quad.map((p) => p.y) ?? [0, image.height]
+	const box = { left: Math.min(...xs), top: Math.min(...ys), width: Math.max(...xs) - Math.min(...xs), height: Math.max(...ys) - Math.min(...ys) }
+	const { clippedShare } = measure(image, box)
+	if (clippedShare > 0.0001)
+		warnings.push(`Overexposed: ${(clippedShare * 100).toFixed(2)} % of the ${detection ? 'painting' : 'photo'} (red stripes) has lost its detail.`)
 	return warnings
 }
 
@@ -112,17 +114,20 @@ app.post('/capture', (c) =>
 		const color = await readColorCalibration()
 		if (!color) return c.json({ error: 'calibrate colour first' }, 400)
 		await ensureDirs()
-		await ensureLocked({ shutter: color.shutter, kelvin: color.kelvin })
+		await ensureLocked({ shutter: color.shutter, kelvin: color.kelvin, iso: color.iso })
 		const result = await photoResult(basename(await shoot(dirs.raw)))
-		return c.json({ ...result, warnings: await shotWarnings(result.file, color.shutter, result.detection) })
+		return c.json({ ...result, warnings: await shotWarnings(result.file, color, result.detection) })
 	}),
 )
 
 // colour calibration: reference photo → mark the white area → calibrate (see color.ts)
-app.post('/color/reference', async (c) => c.json(await exclusive(takeReference)))
+app.post('/color/reference', async (c) => {
+	const { iso } = await c.req.json<{ iso?: number }>()
+	return c.json(await exclusive(() => takeReference(iso ?? DEFAULT_ISO)))
+})
 app.post('/color/calibrate', async (c) => {
-	const { file, box } = await c.req.json<{ file: string; box: Box }>()
-	return c.json(await exclusive(() => calibrateColor(file, box)))
+	const { file, box, white } = await c.req.json<{ file: string; box: Box; white?: number }>()
+	return c.json(await exclusive(() => calibrateColor(file, box, white)))
 })
 app.get('/color/shot/:file', async (c) => {
 	const file = shotFile(c.req.param('file'))

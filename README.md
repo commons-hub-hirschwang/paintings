@@ -29,13 +29,13 @@ Projects live in `captures/projects/<name>/` (photos, paintings, calibration, sy
 
 Camera: Sony α6400 via USB. Menu: **Network → Ctrl w/ Smartphone → Off** (otherwise USB Connection is greyed out),
 **Setup → USB Connection → PC Remote**, and the **mode dial on M** (the other settings can't be changed over USB otherwise).
-ISO, aperture, file format (RAW+JPEG) and DRO off are set by the bridge: `fixedSettings` in `bridge/tether.ts`.
+Aperture, file format (RAW+JPEG) and DRO off are set by the bridge (`fixedSettings` in `bridge/tether.ts`); ISO is chosen when calibrating colour.
 Check with `gphoto2 --auto-detect`. If the camera is "busy", the desktop's gvfs automounter
 grabbed it: `pkill -f gvfs-gphoto2-volume-monitor`.
 
 1. Fixed camera position (tripod), painting placed at a marked spot.
 2. Colour calibration, at the start of a session or whenever the light changes (**Calibrate colour**): photograph a painting
-   with a clean white area and mark it. It sets the shutter (white at 242/255) and the white balance for all following
+   with a clean white area and mark it. It sets the shutter (white at a chosen level, by default 242/255) and the white balance for all following
    paintings alike, so a painting's own colour bias stays. Recalibrate with the same painting and area. The saved
    `archive` has the white balance applied, `original` doesn't. Details: `bridge/color.ts`; result: `<project>/color/`.
 3. Remote capture → type title → select 4 corners → perspective warp to a rectangle.
