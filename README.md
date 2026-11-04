@@ -28,16 +28,21 @@ Projects live in `captures/projects/<name>/` (photos, paintings, calibration, sy
 ## Capture
 
 Camera: Sony α6400 via USB. Menu: **Network → Ctrl w/ Smartphone → Off** (otherwise USB Connection is greyed out),
-**Setup → USB Connection → PC Remote**, and file format **JPEG**.
+**Setup → USB Connection → PC Remote**, and the **mode dial on M** (the other settings can't be changed over USB otherwise).
+ISO, aperture, file format (RAW+JPEG) and DRO off are set by the bridge: `fixedSettings` in `bridge/tether.ts`.
 Check with `gphoto2 --auto-detect`. If the camera is "busy", the desktop's gvfs automounter
 grabbed it: `pkill -f gvfs-gphoto2-volume-monitor`.
 
 1. Fixed camera position (tripod), painting placed at a marked spot.
-2. Remote capture → type title → select 4 corners → perspective warp to a rectangle.
-3. Calibration: the first painting of a session asks for measured width/height in cm.
+2. Colour calibration, at the start of a session or whenever the light changes (**Calibrate colour**): photograph a painting
+   with a clean white area and mark it. It sets the shutter (white at 242/255) and the white balance for all following
+   paintings alike, so a painting's own colour bias stays. Recalibrate with the same painting and area. The saved
+   `archive` has the white balance applied, `original` doesn't. Details: `bridge/color.ts`; result: `<project>/color/`.
+3. Remote capture → type title → select 4 corners → perspective warp to a rectangle.
+4. Distance calibration: the first painting of a session asks for measured width/height in cm.
    Later sessions ask "Same distance from camera to painting as before? (reuse calibration)".
    Calibration lives in `captures/calibration.json`.
-4. Paintings are stored offline in `captures/projects/<name>/paintings/<id>/` (archive, thumb, metadata).
+5. Paintings are stored offline in `captures/projects/<name>/paintings/<id>/` (archive, thumb, metadata).
    Upload them with the **Sync** button or `pnpm sync` (to `GALLERY_URL` in `.env.local`; safe to rerun).
 
 ## Images

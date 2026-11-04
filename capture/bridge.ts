@@ -8,6 +8,7 @@ export type BridgeStatus = {
 	// below: only when a project is open
 	groups: string[]
 	calibration: Calibration | null
+	color: ColorCalibration | null
 	galleryUrl: string
 	hasUploadKey: boolean
 	connection: { ok: true; key: string } | { ok: false; error: string }
@@ -15,7 +16,19 @@ export type BridgeStatus = {
 }
 // automatic corners (bridge/detect.ts); bowPx per side (top, right, bottom, left), + = bowed inwards
 export type Detection = { quad: Quad; sides: { inliers: number; bowPx: number; contrast: number }[]; trusted: boolean }
-export type Photo = { file: string; camera: Camera; detection: Detection | null }
+export type Photo = { file: string; camera: Camera; detection: Detection | null; warnings: string[] }
+export type Box = { left: number; top: number; width: number; height: number }
+export type ColorCalibration = {
+	shutter: string
+	kelvin: number
+	iso: number
+	fNumber: number
+	gains: [number, number, number]
+	box: Box
+	white: number
+	createdAt: number
+	warnings: string[]
+}
 export type LocalPainting = {
 	id: string
 	title: string
@@ -48,6 +61,10 @@ export const bridge = {
 	capture: () => call<Photo>('/capture', { method: 'POST' }),
 	upload: (file: File) => call<Photo>('/upload', { method: 'POST', body: file }),
 	detect: (file: string, quad: Quad) => call<Detection>('/detect', json({ file, quad })),
+	colorReference: () => call<{ file: string; previous: ColorCalibration | null }>('/color/reference', { method: 'POST' }),
+	calibrateColor: (file: string, box: Box) => call<ColorCalibration>('/color/calibrate', json({ file, box })),
+	colorShotUrl: (file: string) => `/bridge/color/shot/${encodeURIComponent(file)}`,
+	colorImageUrl: (name: 'reference.jpg' | 'patch.jpg', version: number) => `/bridge/color/${name}?v=${version}`,
 	forgetCalibration: () => call('/calibration', { method: 'DELETE' }),
 	saveSettings: (settings: { galleryUrl: string; uploadKey: string }) =>
 		call('/settings', { ...json(settings), method: 'PUT' }),

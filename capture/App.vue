@@ -1,15 +1,20 @@
 <script setup lang="ts">
 // Local capture tool (pnpm capture): project → capture → corners → title/size → save offline → sync.
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import ColorCalibration from './ColorCalibration.vue'
 import CornerEditor from './CornerEditor.vue'
 import { bridge, type BridgeStatus, type Detection, type LocalPainting, type Photo } from './bridge'
 import { estimateSizeCm, reconstruct, turnCorners, type Camera, type Quad } from '../shared/geometry'
 
 const confirmedKey = () => `capture:calibration-confirmed:${status.value?.project}`
+const colorConfirmedKey = () => `capture:color-confirmed:${status.value?.project}`
 const newProject = ref('')
 
 const status = ref<BridgeStatus | null>(null)
 const askReuse = ref(false)
+const askColorReuse = ref(false)
+const calibratingColor = ref(false)
+const warnings = ref<string[]>([])
 const photo = ref<string | null>(null)
 // corners in the painting's orientation: TL is the painting's top left, also when photographed sideways
 const quad = ref<Quad | null>(null)
@@ -79,6 +84,7 @@ const refreshStatus = () =>
 		if (!status.value.groups?.includes(group.value)) group.value = paintings.value[0]?.group ?? status.value.groups?.[0] ?? ''
 		if (!material.value) material.value = paintings.value[0]?.material ?? ''
 		askReuse.value = !!status.value.calibration && sessionStorage.getItem(confirmedKey()) !== 'yes'
+		askColorReuse.value = !!status.value.color && sessionStorage.getItem(colorConfirmedKey()) !== 'yes'
 	})
 refreshStatus()
 
@@ -86,6 +92,18 @@ async function answerReuse(reuse: boolean) {
 	if (!reuse) await run('Resetting calibration…', () => bridge.forgetCalibration().then(refreshStatus))
 	sessionStorage.setItem(confirmedKey(), 'yes')
 	askReuse.value = false
+}
+
+function answerColorReuse(reuse: boolean) {
+	sessionStorage.setItem(colorConfirmedKey(), 'yes')
+	askColorReuse.value = false
+	calibratingColor.value = !reuse
+}
+
+async function colorCalibrated() {
+	calibratingColor.value = false
+	sessionStorage.setItem(colorConfirmedKey(), 'yes')
+	status.value = await bridge.status()
 }
 
 const openProject = (name: string, create = false) =>
@@ -109,6 +127,11 @@ const nextNumber = computed(() => Math.max(-1, ...paintings.value.filter((p) => 
 const label = (p: { group: string; number: number }) => `${p.group} #${p.number}`
 
 const calibration = computed(() => status.value?.calibration ?? null)
+const color = computed(() => status.value?.color ?? null)
+const age = (time: number) => {
+	const minutes = Math.round((Date.now() - time) / 60000)
+	return minutes < 60 ? `${minutes} min ago` : minutes < 48 * 60 ? `${Math.round(minutes / 60)} h ago` : `${Math.round(minutes / 1440)} days ago`
+}
 const measured = computed(() => Number(widthCm.value) > 0 && Number(heightCm.value) > 0)
 const estimate = computed(() =>
 	quad.value && calibration.value && camera.value ? estimateSizeCm(quad.value, calibration.value, camera.value) : null,
@@ -136,6 +159,7 @@ function setPhoto(result: Photo) {
 	quad.value = detection.value?.quad ?? null
 	camera.value = result.camera
 	photo.value = result.file
+	warnings.value = result.warnings
 }
 
 // roughly placed corners → snapped to the painting's edges
@@ -223,9 +247,15 @@ const cm = (value: number) => value.toFixed(1)
 						? calibration.centerDepthCm
 							? `calibrated at ${(calibration.centerDepthCm / 100).toFixed(2)} m`
 							: `calibrated, ${calibration.pxPerCm.toFixed(2)} px/cm`
-						: 'not calibrated'
+						: 'distance not calibrated'
 				}}
+				·
+				{{ color ? `colour: ${color.shutter} s, f/${color.fNumber}, ISO ${color.iso}, ${color.kelvin} K (${age(color.createdAt)})` : 'colour not calibrated' }}
 			</span>
+			<template v-if="status?.project">
+				<button :disabled="!!busy" @click="calibratingColor = true">Calibrate colour</button>
+				<button v-if="calibration" :disabled="!!busy" @click="askReuse = true">Calibrate distance</button>
+			</template>
 			<button @click="refreshStatus">Refresh</button>
 		</header>
 
@@ -240,11 +270,32 @@ const cm = (value: number) => value.toFixed(1)
 			<button @click="answerReuse(false)">No, measure again</button>
 		</section>
 
+		<section v-else-if="askColorReuse" class="dialog">
+			<p>Same light as before? (reuse colour calibration)</p>
+			<img v-if="color" class="patch" :src="bridge.colorImageUrl('patch.jpg', color.createdAt)" alt="the white area of the last calibration" />
+			<button @click="answerColorReuse(true)">Yes, reuse</button>
+			<button @click="answerColorReuse(false)">No, calibrate again</button>
+		</section>
+
+		<ColorCalibration
+			v-else-if="status?.project && calibratingColor"
+			:run="run"
+			:busy="!!busy"
+			:previous="color"
+			@done="colorCalibrated"
+			@cancel="calibratingColor = false"
+		/>
+
 		<p v-else-if="status && !status.project" class="muted">Create or open a project to start.</p>
 
 		<template v-else-if="status">
+			<p v-if="!color" class="warning">Calibrate colour first: mark a white area of a painting, in this session's light.</p>
+			<template v-else>
+				<p v-for="warning in color.warnings" :key="warning" class="warning">{{ warning }}</p>
+			</template>
+
 			<section v-if="!photo" class="actions">
-				<button :disabled="!!busy || !status.cameras.length" @click="capture">Capture with camera</button>
+				<button :disabled="!!busy || !status.cameras.length || !color" @click="capture">Capture with camera</button>
 				<label class="button">
 					Upload photo
 					<input type="file" accept="image/jpeg" hidden @change="upload" />
@@ -257,6 +308,7 @@ const cm = (value: number) => value.toFixed(1)
 				<form @submit.prevent="canSave && save()">
 					<fieldset>
 					<legend>Painting</legend>
+					<p v-for="warning in warnings" :key="warning" class="warning">{{ warning }}</p>
 					<p v-if="keptDetection && detection!.trusted">Corners detected automatically.</p>
 					<p v-else-if="keptDetection" class="warning">Detection unsure — check the corners.</p>
 					<p v-else-if="!detection" class="warning">No painting edges found — set the corners.</p>
@@ -400,6 +452,11 @@ const cm = (value: number) => value.toFixed(1)
 			flex-direction: column;
 			gap: var(--gap);
 		}
+	}
+
+	& .patch {
+		display: block;
+		max-width: 12rem;
 	}
 
 	& .size,

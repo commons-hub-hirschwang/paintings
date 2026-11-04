@@ -18,6 +18,8 @@ export type LocalPainting = {
 	number: number
 	material?: string // e.g. "Leinwand"
 	// crop of the (lens-corrected) photo around the corners (original.jpg) + corners within it, for later corrections
+	// the colour calibration in the archive image; original.jpg stays without its gains. Absent: photo taken without one
+	color?: { shutter: string; kelvin: number; iso: number; fNumber: number; gains: [number, number, number]; calibratedAt: number }
 	original?: { photo: string; crop: { left: number; top: number; width: number; height: number }; quad: Quad }
 }
 

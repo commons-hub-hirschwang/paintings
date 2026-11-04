@@ -17,8 +17,10 @@ import { checkConnection, getSettings, saveSettings } from './api'
 import { listPaintings, nextNumber, paintingFile, savePainting } from './store'
 import { isSynced, syncAll } from './sync'
 import { addGroup, currentProject, listGroups, listProjects, openProject, projectPath } from './project'
-import { correctLens, warpToRectangle } from './warp'
-import { cameraOf, lensOf } from './camera'
+import { correctLens, readOriented, warpToRectangle } from './warp'
+import { applyGains, calibrateColor, colorFile, correctionFor, measure, readColorCalibration, shotFile, takeReference, type Box } from './color'
+import { ensureLocked, exclusive, exposureMismatch, forgetCameraState, shoot } from './tether'
+import { cameraOf, exposureOf, lensOf } from './camera'
 import { detectCorners, trusted } from './detect'
 
 const run = promisify(execFile)
@@ -80,6 +82,7 @@ app.get('/status', async (c) => {
 		projects: listProjects(),
 		groups: listGroups(),
 		calibration: await readCalibration(),
+		color: await readColorCalibration(),
 		galleryUrl,
 		hasUploadKey: !!uploadKey,
 		connection: await checkConnection(),
@@ -87,43 +90,49 @@ app.get('/status', async (c) => {
 	})
 })
 
-// remote-trigger the tethered camera and download the JPEG. One capture at a time; a camera that does not
-// fire (asleep, no focus) is given up after 20 s instead of hanging for a minute. SIGTERM (not SIGKILL) lets
-// gphoto2 cancel and close the PTP session — a killed session leaves the camera's USB stuck until power-cycled.
-let capturing = false
-const CAPTURE_TIMEOUT = 20_000
-
-function captureError(error: { killed?: boolean; stderr?: string; message: string }) {
-	const output = error.stderr || error.message
-	if (error.killed || /PTP Timeout/i.test(output))
-		return 'camera did not respond within 20 s (no focus? asleep?) — press Capture again; if it repeats, switch the camera off and on'
-	if (/Could not claim|resource busy/i.test(output))
-		return 'camera is busy: another program holds it. Run `pkill -f gvfs-gphoto2-volume-monitor` or replug the camera, then try again'
-	if (/No camera found|-105/i.test(output)) return 'no camera found — check USB cable and USB Connection = PC Remote'
-	return output.trim().split('\n').slice(-2).join(' | ')
+// what the photographer should know about a shot: settings that didn't hold, blown-out highlights in the painting
+async function shotWarnings(file: string, shutter: string, detection: Awaited<ReturnType<typeof photoResult>>['detection']) {
+	const raw = join(dirs.raw, basename(file))
+	const mismatch = exposureMismatch(await exposureOf(raw), shutter)
+	if (mismatch.length) forgetCameraState() // set everything again before the next capture
+	const warnings = mismatch.length ? [`Not the calibrated settings: ${mismatch.join(', ')} — not colour corrected.`] : []
+	if (detection) {
+		const xs = detection.quad.map((p) => p.x)
+		const ys = detection.quad.map((p) => p.y)
+		const box = { left: Math.min(...xs), top: Math.min(...ys), width: Math.max(...xs) - Math.min(...xs), height: Math.max(...ys) - Math.min(...ys) }
+		const { clippedShare } = measure(await readOriented(raw), box)
+		if (clippedShare > 0.001) warnings.push(`${(clippedShare * 100).toFixed(1)} % of the painting is blown out (brighter than the calibration white).`)
+	}
+	return warnings
 }
 
-app.post('/capture', async (c) => {
-	if (capturing) return c.json({ error: 'a capture is already running' }, 409)
-	capturing = true
-	try {
+// remote-trigger the tethered camera with the calibrated settings, keep RAW + JPEG
+app.post('/capture', (c) =>
+	exclusive(async () => {
+		const color = await readColorCalibration()
+		if (!color) return c.json({ error: 'calibrate colour first' }, 400)
 		await ensureDirs()
-		const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..*/, '')
-		const { stdout } = await run(
-			'gphoto2',
-			['--capture-image-and-download', '--force-overwrite', '--filename', `${dirs.raw}/${stamp}.%C`],
-			{ timeout: CAPTURE_TIMEOUT, killSignal: 'SIGTERM' },
-		)
-		const saved = [...stdout.matchAll(/Saving file as (\S+)/g)].map((m) => m[1]!)
-		const jpeg = saved.find((file) => /\.jpe?g$/i.test(file))
-		if (!jpeg)
-			return c.json({ error: saved.length ? 'no JPEG captured — set the camera to JPEG' : 'camera did not take a picture — press Capture again' }, 500)
-		return c.json(await photoResult(basename(jpeg)))
-	} catch (error) {
-		return c.json({ error: captureError(error as { killed?: boolean; stderr?: string; message: string }) }, 500)
-	} finally {
-		capturing = false
-	}
+		await ensureLocked({ shutter: color.shutter, kelvin: color.kelvin })
+		const result = await photoResult(basename(await shoot(dirs.raw)))
+		return c.json({ ...result, warnings: await shotWarnings(result.file, color.shutter, result.detection) })
+	}),
+)
+
+// colour calibration: reference photo → mark the white area → calibrate (see color.ts)
+app.post('/color/reference', async (c) => c.json(await exclusive(takeReference)))
+app.post('/color/calibrate', async (c) => {
+	const { file, box } = await c.req.json<{ file: string; box: Box }>()
+	return c.json(await exclusive(() => calibrateColor(file, box)))
+})
+app.get('/color/shot/:file', async (c) => {
+	const file = shotFile(c.req.param('file'))
+	if (!existsSync(file)) return c.notFound()
+	return c.body(new Uint8Array(await readFile(file)), 200, { 'content-type': 'image/jpeg' })
+})
+app.get('/color/:name{reference\\.jpg|patch\\.jpg}', async (c) => {
+	const file = colorFile(c.req.param('name') as 'reference.jpg')
+	if (!existsSync(file)) return c.notFound()
+	return c.body(new Uint8Array(await readFile(file)), 200, { 'content-type': 'image/jpeg', 'cache-control': 'no-store' })
 })
 
 // fallback: photo taken with a phone, uploaded from the browser
@@ -131,13 +140,18 @@ app.post('/upload', async (c) => {
 	await ensureDirs()
 	const file = `${Date.now()}.jpg`
 	await writeFile(join(dirs.raw, file), new Uint8Array(await c.req.arrayBuffer()))
-	return c.json(await photoResult(file))
+	return c.json({ ...(await photoResult(file)), warnings: [] })
 })
 
 app.get('/photo/:file', async (c) => {
 	const photo = await correctedPhoto(c.req.param('file'))
 	if (!photo) return c.notFound()
-	return c.body(new Uint8Array(await readFile(photo.path)), 200, { 'content-type': 'image/jpeg' })
+	// shown as it will be saved
+	const color = await correctionFor(photo.raw)
+	if (!color) return c.body(new Uint8Array(await readFile(photo.path)), 200, { 'content-type': 'image/jpeg' })
+	const { data, width, height } = await readOriented(photo.path)
+	const jpeg = await sharp(applyGains(data, color.gains), { raw: { width, height, channels: 3 } }).jpeg({ quality: 90 }).toBuffer()
+	return c.body(new Uint8Array(jpeg), 200, { 'content-type': 'image/jpeg' })
 })
 
 // "snap": refine roughly placed corners to the painting's edges
@@ -206,7 +220,8 @@ app.post('/process', async (c) => {
 	}
 
 	const { width, height } = rectifiedSize(body.quad, size.widthCm, size.heightCm)
-	const archive = await warpToRectangle(photo.raw, body.quad, width, height, lensOf(camera), body.bows)
+	const color = await correctionFor(photo.raw)
+	const archive = await warpToRectangle(photo.raw, body.quad, width, height, lensOf(camera), body.bows, color ? (data) => applyGains(data, color.gains) : undefined)
 	const original = await cropOriginal(photo.path, body.quad)
 	lastQuad = { quad: body.quad, width: camera.width, height: camera.height }
 
@@ -223,6 +238,9 @@ app.post('/process', async (c) => {
 		group: body.group,
 		number: nextNumber(await listPaintings(), body.group),
 		...(body.material?.trim() ? { material: body.material.trim() } : {}),
+		...(color
+			? { color: { shutter: color.shutter, kelvin: color.kelvin, iso: color.iso, fNumber: color.fNumber, gains: color.gains, calibratedAt: color.createdAt } }
+			: {}),
 		original: { photo: basename(body.file), crop: original.crop, quad: original.quad },
 	}
 	await savePainting(painting, { archive, thumb, original: original.jpeg })

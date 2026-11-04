@@ -96,8 +96,10 @@ function inward(from: Point, to: Point): Point {
 // Samples the camera's photo directly (homography, then lens distortion): only one interpolation.
 // bows (top, right, bottom, left; px, + = inwards, from bridge/detect.ts): the sides are slightly curved
 // (canvas); a smooth displacement, zero at the corners, maps the curved sides onto the straight output edges.
-export async function warpToRectangle(file: string, quad: Quad, width: number, height: number, lens: Lens | null, bows?: number[]) {
+// adjust: changes the photo's RGB pixels before resampling (the colour calibration's white balance).
+export async function warpToRectangle(file: string, quad: Quad, width: number, height: number, lens: Lens | null, bows?: number[], adjust?: (data: Buffer) => unknown) {
 	const src = await readOriented(file)
+	adjust?.(src.data)
 	const [a, b, c, d, e, f, g, h] = homography(width, height, quad) as [number, number, number, number, number, number, number, number]
 	const { x: cx, y: cy } = lens?.center ?? { x: 0, y: 0 }
 	// per side: bow · inward normal

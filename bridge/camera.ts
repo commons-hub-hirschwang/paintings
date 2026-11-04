@@ -35,6 +35,21 @@ export async function cameraOf(file: string): Promise<Camera> {
 	return { width, height, focalPx, lens: correction ? lens : null }
 }
 
+export type Exposure = { shutter: number; fNumber: number; iso: number; program: number }
+
+// null: a photo without exposure data. program 1 = manual
+export async function exposureOf(file: string): Promise<Exposure | null> {
+	const { exif } = await sharp(file).metadata()
+	try {
+		const photo = exif ? exifReader(exif).Photo : null
+		if (!photo?.ExposureTime || !photo.FNumber || !photo.ISOSpeedRatings) return null
+		const iso = photo.ISOSpeedRatings
+		return { shutter: photo.ExposureTime, fNumber: photo.FNumber, iso: Array.isArray(iso) ? iso[0]! : iso, program: photo.ExposureProgram ?? 0 }
+	} catch {
+		return null
+	}
+}
+
 // the lens correction of a photo, null when its lens has no profile
 export const lensOf = ({ lens, width, height }: Camera): Lens | null =>
 	lens && lens.cameraCrop ? lensFor(lens.model, lens.focalMm, width, height, lens.cameraCrop) : null
