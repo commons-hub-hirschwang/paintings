@@ -3,7 +3,7 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import LoginGate from '@/components/LoginGate.vue'
 import { authed, user } from '@/auth'
 import { imageUrl } from '@/api'
-import { paintingStatuses, sizeLabel, stackLabel, type AdminPainting, type PaintingStatus, type UploadKey } from '../../shared/types'
+import { paintingStatuses, sizeLabel, type AdminPainting, type PaintingStatus, type UploadKey } from '../../shared/types'
 import { priceExamples, priceFunction, priceVariables, type PriceFn } from '../../shared/pricing'
 import { functions } from '../../shared/expr'
 
@@ -39,10 +39,12 @@ async function load() {
 const savePricing = () => act(() => authed('/api/admin/pricing', { method: 'PUT', body: JSON.stringify({ formula: formula.value }) }))
 watch(user, (u) => u?.role === 'admin' && load().catch((e) => (error.value = e.message)), { immediate: true })
 
-// live view: paintings arriving from a capture sync (or changed elsewhere) show up without reloading
+// live view: paintings arriving from a capture sync (or changed elsewhere) show up without reloading;
+// paused while typing in a name, as the update would overwrite the input
 const LIVE_INTERVAL = 10_000
 const live = setInterval(() => {
-	if (user.value?.role === 'admin' && document.visibilityState === 'visible') load().catch(() => {})
+	if (user.value?.role === 'admin' && document.visibilityState === 'visible' && !document.querySelector('#admin input:not(.pick):focus'))
+		load().catch(() => {})
 }, LIVE_INTERVAL)
 onBeforeUnmount(() => clearInterval(live))
 
@@ -62,18 +64,44 @@ const rename = (painting: AdminPainting, title: string) =>
 const setStatus = (painting: AdminPainting, status: PaintingStatus) =>
 	act(() => authed(`/api/admin/paintings/${painting.id}`, { method: 'PATCH', body: JSON.stringify({ status }) }))
 
-// selection (checkboxes on the right) → status of all selected at once
+const renameGroup = (id: string, name: string) =>
+	act(() => authed(`/api/admin/groups/${id}`, { method: 'PUT', body: JSON.stringify({ name }) }))
+
+// filters (null = all); deleted paintings only show up when filtering for them
+const groupFilter = ref<string | null>(null)
+const numberFilter = ref('')
+const statusFilter = ref<PaintingStatus | 'deleted' | null>(null)
+// [id, name]; id '' = paintings without a group
+const groups = computed(() => [...new Map(paintings.value.map((p) => [p.group_id ?? '', p.group_name ?? '']))])
+const visible = computed(() =>
+	paintings.value.filter(
+		(p) =>
+			(groupFilter.value === null || (p.group_id ?? '') === groupFilter.value) &&
+			(numberFilter.value === '' || String(p.number) === numberFilter.value) &&
+			(statusFilter.value === 'deleted'
+				? p.deleted_at !== null
+				: p.deleted_at === null && (statusFilter.value === null || p.status === statusFilter.value)),
+	),
+)
+
+// selection (checkboxes on the right) → status of all selected at once; only ever acts on what the filters show
 const selected = ref(new Set<string>())
-const allSelected = computed(() => paintings.value.length > 0 && paintings.value.every((p) => selected.value.has(p.id)))
+const picked = computed(() => visible.value.filter((p) => selected.value.has(p.id)).map((p) => p.id))
+const allSelected = computed(() => visible.value.length > 0 && picked.value.length === visible.value.length)
 function toggle(id: string) {
 	const next = new Set(selected.value)
 	if (!next.delete(id)) next.add(id)
 	selected.value = next
 }
-const toggleAll = () => (selected.value = new Set(allSelected.value ? [] : paintings.value.map((p) => p.id)))
+const toggleAll = () => (selected.value = new Set(allSelected.value ? [] : visible.value.map((p) => p.id)))
 const setSelectedStatus = (status: PaintingStatus) =>
 	act(async () => {
-		await authed('/api/admin/paintings', { method: 'PATCH', body: JSON.stringify({ ids: [...selected.value], status }) })
+		await authed('/api/admin/paintings', { method: 'PATCH', body: JSON.stringify({ ids: picked.value, status }) })
+		selected.value = new Set()
+	})
+const setSelectedDeleted = (deleted: boolean) =>
+	act(async () => {
+		await authed('/api/admin/paintings/deleted', { method: 'PUT', body: JSON.stringify({ ids: picked.value, deleted }) })
 		selected.value = new Set()
 	})
 
@@ -94,22 +122,62 @@ const date = (seconds: number | null) => (seconds ? new Date(seconds * 1000).toL
 		<LoginGate :roles="['admin']">
 			<p v-if="error" class="error">{{ error }}</p>
 
+			<section v-if="groups.some(([id]) => id)">
+				<h2>Stacks</h2>
+				<p class="muted">Rename a stack here; the new name is used everywhere, including the capture tool.</p>
+				<div class="actions">
+					<template v-for="[id, name] in groups" :key="id">
+						<input
+							v-if="id"
+							:value="name"
+							aria-label="Stack name"
+							@change="renameGroup(id, ($event.target as HTMLInputElement).value)"
+							@keydown.enter="($event.target as HTMLInputElement).blur()"
+						/>
+					</template>
+				</div>
+			</section>
+
 			<section>
-				<h2>Paintings ({{ paintings.length }})</h2>
-				<div v-if="selected.size" class="actions bulk">
+				<h2>Paintings ({{ visible.length }})</h2>
+				<div class="actions bulk">
 					<label>
-						Status of {{ selected.size }} selected
+						Stack
+						<select v-model="groupFilter">
+							<option :value="null">all</option>
+							<option v-for="[id, name] in groups" :key="id" :value="id">{{ name || 'none' }}</option>
+						</select>
+					</label>
+					<label>
+						Number
+						<input v-model.trim="numberFilter" type="search" inputmode="numeric" placeholder="all" />
+					</label>
+					<label>
+						Status
+						<select v-model="statusFilter">
+							<option :value="null">all</option>
+							<option v-for="status in paintingStatuses" :key="status" :value="status">{{ status }}</option>
+							<option value="deleted">deleted</option>
+						</select>
+					</label>
+				</div>
+				<div v-if="picked.length" class="actions bulk">
+					<label>
+						Status of {{ picked.length }} selected
 						<select value="" @change="setSelectedStatus(($event.target as HTMLSelectElement).value as PaintingStatus)">
 							<option value="" disabled>set to…</option>
 							<option v-for="status in paintingStatuses" :key="status">{{ status }}</option>
 						</select>
 					</label>
+					<button v-if="statusFilter === 'deleted'" @click="setSelectedDeleted(false)">Restore</button>
+					<button v-else @click="setSelectedDeleted(true)">Delete</button>
 					<button @click="selected = new Set()">Clear selection</button>
 				</div>
 				<table>
 					<tr>
 						<th></th>
 						<th>Stack</th>
+						<th>Number</th>
 						<th>Name</th>
 						<th>Size (cm)</th>
 						<th>Rating</th>
@@ -119,11 +187,12 @@ const date = (seconds: number | null) => (seconds ? new Date(seconds * 1000).toL
 							<input type="checkbox" class="pick" :checked="allSelected" title="Select all" @change="toggleAll" />
 						</th>
 					</tr>
-					<tr v-for="painting in paintings" :key="painting.id">
+					<tr v-for="painting in visible" :key="painting.id">
 						<td>
 							<img v-if="painting.variants_version" :src="imageUrl(painting, 'thumb')" :alt="painting.title" loading="lazy" />
 						</td>
-						<td>{{ stackLabel(painting) }}</td>
+						<td>{{ painting.group_name }}</td>
+						<td>{{ painting.number }}</td>
 						<td>
 							<input
 								:value="painting.title"

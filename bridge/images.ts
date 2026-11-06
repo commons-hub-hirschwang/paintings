@@ -14,7 +14,8 @@ export async function renderWebVariants(archive: Buffer) {
 	return rendered
 }
 
-// derive all web variants from the archive master, upload them, and record the config version
+// derive all web variants from the archive master, upload them, and record the config version + publish time: image
+// URLs carry this and are cached forever, so a changed painting needs a new one
 export async function publishWebVariants(paintingId: string, archive: Buffer) {
 	const rendered = await renderWebVariants(archive)
 	for (const name of Object.keys(rendered) as WebVariant[]) {
@@ -24,5 +25,5 @@ export async function publishWebVariants(paintingId: string, archive: Buffer) {
 			headers: { 'content-type': 'image/jpeg' },
 		})
 	}
-	await api(`/paintings/${paintingId}/variants-version`, { method: 'PUT', ...json({ variants_version: webVariantsVersion }) })
+	await api(`/paintings/${paintingId}/variants-version`, { method: 'PUT', ...json({ variants_version: `${webVariantsVersion}-${Date.now()}` }) })
 }

@@ -10,41 +10,21 @@ import { getRequestListener } from '@hono/node-server'
 import vue from '@vitejs/plugin-vue'
 import { createServer as createViteServer } from 'vite'
 import { Hono } from 'hono'
-import { calibrate, estimateSizeCm, rectifiedSize, type Calibration, type Quad } from '../shared/geometry'
+import { calibrate, estimateSizeCm, type Calibration, type Quad } from '../shared/geometry'
 import sharp from 'sharp'
-import { archive, webVariants } from '../shared/image-variants'
-import { checkConnection, getSettings, saveSettings } from './api'
-import { listPaintings, nextNumber, paintingFile, savePainting } from './store'
+import { checkConnection, fetchGroupNames, getSettings, saveSettings } from './api'
+import { listPaintings, nextNumber, paintingFile, readPainting, savePainting } from './store'
+import { changePainting, correctedPhoto, dirs, ensureDirs, paintingSource, renderImages, roundCm, type PaintingChange } from './render'
 import { isSynced, syncAll } from './sync'
-import { addGroup, currentProject, listGroups, listProjects, openProject, projectPath } from './project'
-import { correctLens, readOriented, warpToRectangle } from './warp'
+import { addGroup, applyGroupNames, currentProject, listGroups, listProjects, openProject, projectPath } from './project'
+import { readOriented } from './warp'
 import { applyGains, calibrateColor, colorFile, correctionFor, DEFAULT_ISO, measure, readColorCalibration, shotFile, takeReference, type Box, type ColorCalibration } from './color'
 import { ensureLocked, exclusive, exposureMismatch, forgetCameraState, shoot } from './tether'
-import { cameraOf, exposureOf, lensOf } from './camera'
-import { detectCorners, trusted } from './detect'
+import { exposureOf } from './camera'
+import { detectCorners, measureBows, trusted } from './detect'
 
 const run = promisify(execFile)
-// raw: the camera's photos (untouched); corrected: lens-corrected copies, in which corners are picked
-const dirs = { get raw() { return projectPath('raw') }, get corrected() { return projectPath('corrected') } }
 const calibrationFile = () => projectPath('calibration.json')
-// created before every write, so deleting captures/ while the bridge runs is harmless
-const ensureDirs = () => Promise.all([mkdir(dirs.raw, { recursive: true }), mkdir(dirs.corrected, { recursive: true })])
-
-// the photo the corner editor shows (lens-corrected when the lens has a profile), created on demand
-async function correctedPhoto(file: string) {
-	const raw = join(dirs.raw, basename(file))
-	if (!existsSync(raw)) return null
-	const camera = await cameraOf(raw)
-	const lens = lensOf(camera)
-	if (!lens) return { path: raw, camera, raw }
-	const path = join(dirs.corrected, `${basename(file)}.jpg`)
-	if (!existsSync(path)) {
-		await ensureDirs()
-		await writeFile(path, await correctLens(raw, lens))
-	}
-	return { path, camera, raw }
-}
-
 // corners of the last saved painting: the next one usually stands at the same spot (detection hint)
 let lastQuad: { quad: Quad; width: number; height: number } | null = null
 
@@ -76,6 +56,8 @@ app.get('/status', async (c) => {
 	if (!project) return c.json({ cameras, project, projects: listProjects() })
 	const unsynced = (await listPaintings()).filter((p) => !isSynced(p)).length
 	const { galleryUrl, uploadKey } = getSettings()
+	const connection = await checkConnection()
+	if (connection.ok) applyGroupNames(await fetchGroupNames())
 	return c.json({
 		cameras,
 		project,
@@ -85,7 +67,7 @@ app.get('/status', async (c) => {
 		color: await readColorCalibration(),
 		galleryUrl,
 		hasUploadKey: !!uploadKey,
-		connection: await checkConnection(),
+		connection,
 		unsynced,
 	})
 })
@@ -151,11 +133,12 @@ app.post('/upload', async (c) => {
 app.get('/photo/:file', async (c) => {
 	const photo = await correctedPhoto(c.req.param('file'))
 	if (!photo) return c.notFound()
-	// shown as it will be saved
-	const color = await correctionFor(photo.raw)
-	if (!color) return c.body(new Uint8Array(await readFile(photo.path)), 200, { 'content-type': 'image/jpeg' })
+	// shown as it will be saved; a saved painting (?painting=id) keeps the colour it was photographed with
+	const id = c.req.query('painting')
+	const gains = id ? (await readPainting(basename(id)))?.color?.gains : (await correctionFor(photo.raw))?.gains
+	if (!gains) return c.body(new Uint8Array(await readFile(photo.path)), 200, { 'content-type': 'image/jpeg' })
 	const { data, width, height } = await readOriented(photo.path)
-	const jpeg = await sharp(applyGains(data, color.gains), { raw: { width, height, channels: 3 } }).jpeg({ quality: 90 }).toBuffer()
+	const jpeg = await sharp(applyGains(data, gains), { raw: { width, height, channels: 3 } }).jpeg({ quality: 90 }).toBuffer()
 	return c.body(new Uint8Array(jpeg), 200, { 'content-type': 'image/jpeg' })
 })
 
@@ -169,45 +152,33 @@ app.post('/detect', async (c) => {
 	return c.json({ ...detection, trusted: trusted(detection, photo.camera) })
 })
 
+// how the sides curve between the given corners, automatic or placed by hand
+app.post('/bows', async (c) => {
+	const { file, quad } = await c.req.json<{ file: string; quad: Quad }>()
+	const photo = await correctedPhoto(file)
+	if (!photo) return c.notFound()
+	return c.json(await measureBows(photo.path, quad))
+})
+
 // "same distance from camera to painting as before?" — no → forget calibration
 app.delete('/calibration', async (c) => {
 	await rm(calibrationFile(), { force: true })
 	return c.json({ ok: true })
 })
 
-// the photo around the selected corners (+ margin) instead of the whole photo, with the corners relative to it
-const ORIGINAL_MARGIN = 50
-async function cropOriginal(photo: string, quad: Quad) {
-	const upright = await sharp(photo).rotate().toBuffer({ resolveWithObject: true }) // same orientation as the editor
-	const xs = quad.map((p) => p.x)
-	const ys = quad.map((p) => p.y)
-	const left = Math.max(0, Math.floor(Math.min(...xs) - ORIGINAL_MARGIN))
-	const top = Math.max(0, Math.floor(Math.min(...ys) - ORIGINAL_MARGIN))
-	const crop = {
-		left,
-		top,
-		width: Math.min(upright.info.width, Math.ceil(Math.max(...xs) + ORIGINAL_MARGIN)) - left,
-		height: Math.min(upright.info.height, Math.ceil(Math.max(...ys) + ORIGINAL_MARGIN)) - top,
-	}
-	const jpeg = await sharp(upright.data).extract(crop).jpeg({ quality: archive.quality }).toBuffer()
-	return { jpeg, crop, quad: quad.map((p) => ({ x: p.x - left, y: p.y - top })) as Quad }
-}
-
 // corners selected → rectify and store locally (works offline; uploaded by /sync)
 app.post('/process', async (c) => {
 	await ensureDirs()
-	// bows: per side (top, right, bottom, left), from the detection, when its corners were kept
 	const body = await c.req.json<{
 		file: string
 		quad: Quad
-		bows?: number[]
 		title: string
-		group: string
+		groupId: string
 		material?: string
 		widthCm?: number
 		heightCm?: number
 	}>()
-	if (!listGroups().includes(body.group)) return c.json({ error: `unknown group "${body.group}"` }, 400)
+	if (!listGroups().some((g) => g.id === body.groupId)) return c.json({ error: `unknown group "${body.groupId}"` }, 400)
 	const photo = await correctedPhoto(body.file)
 	if (!photo) return c.json({ error: `no photo "${body.file}"` }, 404)
 	const { camera } = photo
@@ -224,24 +195,18 @@ app.post('/process', async (c) => {
 		return c.json({ error: 'no calibration — measure this painting' }, 400)
 	}
 
-	const { width, height } = rectifiedSize(body.quad, size.widthCm, size.heightCm)
 	const color = await correctionFor(photo.raw)
-	const archive = await warpToRectangle(photo.raw, body.quad, width, height, lensOf(camera), body.bows, color ? (data) => applyGains(data, color.gains) : undefined)
-	const original = await cropOriginal(photo.path, body.quad)
+	const { archive, thumb, original } = await renderImages(photo, body.quad, size, color?.gains)
 	lastQuad = { quad: body.quad, width: camera.width, height: camera.height }
-
-	const { maxSize, quality } = webVariants.thumb
-	const thumb = await sharp(archive).resize({ width: maxSize, height: maxSize, fit: 'inside' }).jpeg({ quality }).toBuffer()
-	const round = (cm: number) => Math.round(cm * 10) / 10
 	const painting = {
 		id: crypto.randomUUID(),
 		title: body.title,
-		widthCm: round(size.widthCm),
-		heightCm: round(size.heightCm),
+		widthCm: roundCm(size.widthCm),
+		heightCm: roundCm(size.heightCm),
 		createdAt: Date.now(),
 		synced: [],
-		group: body.group,
-		number: nextNumber(await listPaintings(), body.group),
+		groupId: body.groupId,
+		number: nextNumber(await listPaintings(), body.groupId),
 		...(body.material?.trim() ? { material: body.material.trim() } : {}),
 		...(color
 			? { color: { shutter: color.shutter, kelvin: color.kelvin, iso: color.iso, fNumber: color.fNumber, gains: color.gains, calibratedAt: color.createdAt } }
@@ -255,6 +220,14 @@ app.post('/process', async (c) => {
 app.get('/paintings', async (c) =>
 	c.json((await listPaintings()).map((painting) => ({ ...painting, isSynced: isSynced(painting) }))),
 )
+
+// bring up a saved painting in the editor
+app.get('/paintings/:id/source', async (c) => c.json(await paintingSource(basename(c.req.param('id')))))
+
+app.put('/paintings/:id', async (c) => {
+	const painting = await changePainting(basename(c.req.param('id')), await c.req.json<PaintingChange>())
+	return c.json({ ...painting, isSynced: isSynced(painting) })
+})
 
 app.get('/paintings/:id/thumb.jpg', async (c) => {
 	const file = paintingFile(basename(c.req.param('id')), 'thumb.jpg')
@@ -273,7 +246,7 @@ app.put('/settings', async (c) => {
 app.post('/sync', async (c) => c.json(await syncAll(console.log)))
 
 // new group (stack) in the current project
-app.post('/groups', (c) => c.json({ group: addGroup() }))
+app.post('/groups', async (c) => c.json(addGroup((await c.req.json<{ name: string }>()).name)))
 
 // open an existing project or create a new one (e.g. "test", "attic", a client's collection)
 app.post('/projects', async (c) => {

@@ -24,7 +24,7 @@ shop.post('/checkout/:id', async (c) => {
 	if (!c.env.STRIPE_SECRET_KEY) return c.json({ error: 'shop not configured yet' }, 503)
 	const id = c.req.param('id')
 	const painting = await c.env.DB.prepare(
-		`SELECT p.*, (SELECT AVG(score) FROM ratings WHERE painting_id = p.id) AS rating FROM paintings p WHERE id = ?`,
+		`SELECT p.*, (SELECT AVG(score) FROM ratings WHERE painting_id = p.id) AS rating FROM paintings p WHERE id = ? AND deleted_at IS NULL`,
 	)
 		.bind(id)
 		.first<Painting & { rating: number | null }>()

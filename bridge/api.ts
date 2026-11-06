@@ -46,6 +46,15 @@ export const json = (body: unknown): RequestInit => ({
 	headers: { 'content-type': 'application/json' },
 })
 
+// current group names from the gallery, by id; none if it can't be reached (the last known names stay)
+export const fetchGroupNames = async (): Promise<Record<string, string>> => {
+	try {
+		return (await (await api('/groups')).json()) as Record<string, string>
+	} catch {
+		return {}
+	}
+}
+
 // checks URL + key; returns the key's name
 export async function checkConnection(): Promise<{ ok: true; key: string } | { ok: false; error: string }> {
 	try {

@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { api, getSettings, json } from './api'
 import { publishWebVariants } from './images'
+import { listGroups } from './project'
 import { listPaintings, paintingFile, writePainting, type LocalPainting } from './store'
 
 export const isSynced = (painting: { synced: string[] }) => painting.synced.includes(getSettings().galleryUrl)
@@ -12,7 +13,7 @@ const upload = async (id: string, variant: 'archive' | 'original', file: Buffer)
 const postPainting = (p: LocalPainting) =>
 	api('/paintings', {
 		method: 'POST',
-		...json({ id: p.id, title: p.title, width_cm: p.widthCm, height_cm: p.heightCm, group_name: p.group, number: p.number, material: p.material }),
+		...json({ id: p.id, title: p.title, width_cm: p.widthCm, height_cm: p.heightCm, group_id: p.groupId, number: p.number, material: p.material }),
 	})
 
 // Upload all local paintings the gallery doesn't have yet; metadata (group, number, size, material) of the others is
@@ -20,6 +21,8 @@ const postPainting = (p: LocalPainting) =>
 export async function syncAll(log: (line: string) => void = () => {}) {
 	const { galleryUrl } = getSettings()
 	const paintings = await listPaintings()
+	// groups first: paintings refer to them
+	await api('/groups', { method: 'PUT', ...json(listGroups()) })
 	for (const painting of paintings.filter(isSynced)) await postPainting(painting)
 	const todo = paintings.filter((p) => !isSynced(p))
 	const failed: { id: string; error: string }[] = []

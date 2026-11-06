@@ -3,11 +3,13 @@
 // magnifier shown, Shift = 1/10 speed). Arrow keys nudge the selected corner by 1 px (Shift: 10 px), keys 1–4 select.
 // The view can be turned in quarter turns (painting photographed sideways): the parent turns the corner order
 // along (turnCorners), the photo itself stays as it is; all screen input is turned back into photo coordinates.
+// Each side shows its measured curve (bows, true to scale) and the range it may curve in.
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import OverexposureMarks from './OverexposureMarks.vue'
-import type { Point, Quad } from '../shared/geometry'
+import type { Bow } from './bridge'
+import { MAX_BOW, type Point, type Quad } from '../shared/geometry'
 
-const props = defineProps<{ src: string; turns: number }>() // turns: clockwise quarter turns of the view
+const props = defineProps<{ src: string; turns: number; bows: Bow[] | null }>() // turns: clockwise quarter turns of the view
 const quad = defineModel<Quad | null>({ required: true }) // null until the parent sets corners on `loaded`
 const emit = defineEmits<{ loaded: [size: { width: number; height: number }]; turn: [direction: 1 | -1] }>()
 const photo = shallowRef<HTMLImageElement | null>(null)
@@ -27,6 +29,31 @@ const loupeVisible = ref(false)
 
 const points = computed(() => (quad.value ?? []).map((p) => `${p.x},${p.y}`).join(' '))
 const handleRadius = computed(() => 14 / displayScale.value)
+
+// per side: quadratic curves through the corners (a control point twice as far out as the curve's middle)
+const sides = computed(() =>
+	(quad.value ?? []).map((a, k) => {
+		const b = quad.value![(k + 1) % 4]!
+		const length = Math.hypot(b.x - a.x, b.y - a.y) || 1
+		const n = { x: -(b.y - a.y) / length, y: (b.x - a.x) / length } // inwards
+		const middle = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }
+		const at = (offset: number) => ({ x: middle.x + n.x * offset, y: middle.y + n.y * offset })
+		const curve = (offset: number, from = a, to = b) => {
+			const control = at(offset * 2)
+			return `${from === a ? `M${a.x},${a.y} ` : ''}Q${control.x},${control.y} ${to.x},${to.y}`
+		}
+		const limit = MAX_BOW * length
+		const measured = props.bows?.[k]
+		const bow = measured?.bowPx ?? 0
+		return {
+			range: `${curve(limit)} ${curve(-limit, b, a)}`,
+			curve: measured?.clear ? curve(bow) : null,
+			atLimit: Math.abs(bow) >= limit - 1,
+			text: !measured ? null : measured.clear ? `${Math.abs(bow).toFixed(0)} px · ${((Math.abs(bow) / length) * 100).toFixed(1)} %` : 'no edge',
+			label: at(bow + 26 / displayScale.value),
+		}
+	}),
+)
 
 function onLoad(event: Event) {
 	const img = event.target as HTMLImageElement
@@ -204,6 +231,18 @@ const loupeStyle = computed(() => {
 		<OverexposureMarks :image="photo" />
 		<svg v-if="natural.width && quad" :viewBox="`0 0 ${natural.width} ${natural.height}`" preserveAspectRatio="none">
 			<polygon :points="points" />
+			<g v-for="(side, index) in sides" :key="index">
+				<path class="range" :d="side.range" />
+				<path v-if="side.curve" class="curve" :d="side.curve" />
+				<text
+					v-if="side.text"
+					:class="{ limit: side.atLimit }"
+					:x="side.label.x"
+					:y="side.label.y"
+					:font-size="14 / displayScale"
+					:transform="`rotate(${-props.turns * 90} ${side.label.x} ${side.label.y})`"
+				>{{ side.text }}</text>
+			</g>
 			<circle
 				v-for="(corner, index) in quad"
 				:key="index"
@@ -282,6 +321,36 @@ const loupeStyle = computed(() => {
 			stroke: rgb(255, 220, 0);
 			stroke-width: 1.5px;
 			vector-effect: non-scaling-stroke;
+		}
+
+		& path {
+			fill: none;
+			vector-effect: non-scaling-stroke;
+
+			&.range {
+				stroke: rgba(255, 220, 0, 0.5);
+				stroke-width: 1px;
+				stroke-dasharray: 4 4;
+			}
+
+			&.curve {
+				stroke: rgb(0, 255, 255);
+				stroke-width: 2px;
+			}
+		}
+
+		& text {
+			fill: #fff;
+			stroke: #000;
+			stroke-width: 3px;
+			paint-order: stroke;
+			text-anchor: middle;
+			dominant-baseline: middle;
+			vector-effect: non-scaling-stroke;
+
+			&.limit {
+				fill: #f66;
+			}
 		}
 
 		& circle {

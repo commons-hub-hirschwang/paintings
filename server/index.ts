@@ -14,9 +14,9 @@ const app = new Hono<Env>()
 // ---------- public ----------
 
 const publicSelect = `SELECT p.id, p.title, p.width_cm, p.height_cm, p.material, p.status, p.variants_version, p.created_at,
-	NULL AS group_name, NULL AS number,
+	NULL AS group_id, NULL AS group_name, NULL AS number,
 	(SELECT AVG(score) FROM ratings WHERE painting_id = p.id) AS rating
-	FROM paintings p WHERE p.status != 'draft' AND p.variants_version IS NOT NULL`
+	FROM paintings p WHERE p.status != 'draft' AND p.deleted_at IS NULL AND p.variants_version IS NOT NULL`
 
 type Rated = PublicPainting & { rating: number | null }
 // price from rating × size (formula on /admin); the rating itself is not published

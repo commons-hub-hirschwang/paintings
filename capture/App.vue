@@ -3,8 +3,8 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import ColorCalibration from './ColorCalibration.vue'
 import CornerEditor from './CornerEditor.vue'
-import { bridge, type BridgeStatus, type Detection, type LocalPainting, type Photo } from './bridge'
-import { estimateSizeCm, reconstruct, turnCorners, type Camera, type Quad } from '../shared/geometry'
+import { bridge, type Bow, type BridgeStatus, type Detection, type LocalPainting, type Photo } from './bridge'
+import { estimateSizeCm, MAX_BOW, reconstruct, turnCorners, type Camera, type Quad } from '../shared/geometry'
 
 const confirmedKey = () => `capture:calibration-confirmed:${status.value?.project}`
 const colorConfirmedKey = () => `capture:color-confirmed:${status.value?.project}`
@@ -16,14 +16,40 @@ const askColorReuse = ref(false)
 const calibratingColor = ref(false)
 const warnings = ref<string[]>([])
 const photo = ref<string | null>(null)
+// the saved painting brought up in the editor (null: a new photo). What a capture series keeps is restored afterwards.
+const editing = ref<LocalPainting | null>(null)
+let beforeEditing: { turns: number; group: string; material: string } | null = null
 // corners in the painting's orientation: TL is the painting's top left, also when photographed sideways
 const quad = ref<Quad | null>(null)
 // view turned clockwise in quarter turns; kept for the next photos (a series photographed the same way)
 const turns = ref(0)
-// automatic corners (in the painting's orientation); its curved-edge correction applies while its corners are kept
+// automatic corners (in the painting's orientation)
 const detection = ref<Detection | null>(null)
 const keptDetection = computed(() => !!detection.value && quad.value === detection.value.quad)
-const maxBow = computed(() => Math.max(0, ...(detection.value?.sides.map((side) => Math.abs(side.bowPx)) ?? [])))
+// how the sides curve between the current corners: measured again after they changed, applied on save
+const bows = ref<Bow[] | null>(null)
+const maxBow = computed(() => Math.max(0, ...(bows.value?.map((side) => Math.abs(side.bowPx)) ?? [])))
+const sideNames = ['top', 'right', 'bottom', 'left']
+const sideLength = (k: number) => {
+	const [a, b] = [quad.value![k]!, quad.value![(k + 1) % 4]!]
+	return Math.hypot(b.x - a.x, b.y - a.y)
+}
+const namesOf = (test: (side: Bow, k: number) => boolean) =>
+	sideNames.filter((_, k) => bows.value && quad.value && test(bows.value[k]!, k)).join(', ')
+const unclearSides = computed(() => namesOf((side) => !side.clear))
+const sidesAtLimit = computed(() => namesOf((side, k) => Math.abs(side.bowPx) >= MAX_BOW * sideLength(k) - 1))
+let bowTimer: ReturnType<typeof setTimeout>
+let bowRequest = 0
+watch([quad, photo], ([corners, file]) => {
+	bows.value = null
+	clearTimeout(bowTimer)
+	const request = ++bowRequest
+	if (!corners || !file) return
+	bowTimer = setTimeout(async () => {
+		const result = await bridge.bows(file, corners).catch(() => null)
+		if (request === bowRequest) bows.value = result
+	}, 300)
+})
 const camera = ref<Camera | null>(null)
 let photoSize = { width: 0, height: 0 }
 let lastQuad: { quad: Quad; turns: number; width: number; height: number } | null = null
@@ -81,7 +107,7 @@ const refreshStatus = () =>
 		status.value = await bridge.status()
 		paintings.value = status.value.project ? await bridge.paintings() : []
 		// keep the chosen group; default: group of the last capture
-		if (!status.value.groups?.includes(group.value)) group.value = paintings.value[0]?.group ?? status.value.groups?.[0] ?? ''
+		if (!status.value.groups?.some((g) => g.id === group.value)) group.value = paintings.value[0]?.groupId ?? status.value.groups?.[0]?.id ?? ''
 		if (!material.value) material.value = paintings.value[0]?.material ?? ''
 		askReuse.value = !!status.value.calibration && sessionStorage.getItem(confirmedKey()) !== 'yes'
 		askColorReuse.value = !!status.value.color && sessionStorage.getItem(colorConfirmedKey()) !== 'yes'
@@ -110,21 +136,29 @@ const openProject = (name: string, create = false) =>
 	run('Opening project…', async () => {
 		await bridge.openProject(name, create)
 		photo.value = null
+		editing.value = null
+		beforeEditing = null
 		lastQuad = null
 		newProject.value = ''
 		await refreshStatus()
 	})
 
-// "New group…" in the select creates the next group (B, C, …) and selects it
-function chooseGroup(value: string) {
-	if (value !== NEW_GROUP) return (group.value = value)
+// "New group…" in the select asks for a name, creates the group and selects it
+function chooseGroup(select: HTMLSelectElement) {
+	if (select.value !== NEW_GROUP) return (group.value = select.value)
+	const name = prompt('Name of the new group')?.trim()
+	select.value = group.value
+	if (!name) return
 	run('Creating group…', async () => {
-		group.value = (await bridge.addGroup()).group
+		const { id } = await bridge.addGroup(name)
 		status.value = await bridge.status()
+		group.value = id
 	})
 }
-const nextNumber = computed(() => Math.max(-1, ...paintings.value.filter((p) => p.group === group.value).map((p) => p.number)) + 1)
-const label = (p: { group: string; number: number }) => `${p.group} #${p.number}`
+const nextNumber = computed(() =>
+	editing.value?.groupId === group.value ? editing.value.number : Math.max(-1, ...paintings.value.filter((p) => p.groupId === group.value).map((p) => p.number)) + 1,
+)
+const label = (p: { groupId: string; number: number }) => `${status.value?.groups?.find((g) => g.id === p.groupId)?.name ?? '?'} #${p.number}`
 
 const calibration = computed(() => status.value?.calibration ?? null)
 const color = computed(() => status.value?.color ?? null)
@@ -151,7 +185,6 @@ function upload(event: Event) {
 const turnDetection = (d: Detection, by: number): Detection => ({
 	...d,
 	quad: turnCorners(d.quad, by) as Quad,
-	sides: turnCorners(d.sides, by),
 })
 
 function setPhoto(result: Photo) {
@@ -172,6 +205,7 @@ const snap = () =>
 // painting photographed sideways: turn the view; the corners turn along (same points, new top)
 function turn(direction: 1 | -1) {
 	turns.value = (turns.value + direction + 4) % 4
+	if (editing.value) [widthCm.value, heightCm.value] = [heightCm.value, widthCm.value]
 	if (keptDetection.value) {
 		detection.value = turnDetection(detection.value!, direction)
 		quad.value = detection.value.quad
@@ -195,14 +229,67 @@ function onPhotoLoaded({ width, height }: { width: number; height: number }) {
 	quad.value = [inset(0.15, 0.15), inset(0.85, 0.15), inset(0.85, 0.85), inset(0.15, 0.85)]
 }
 
+// bring up a saved painting: same editor, with its corners, the view turned as it was saved
+const openPainting = (painting: LocalPainting) =>
+	run('Opening…', async () => {
+		const { file, camera: photoCamera, quad: corners } = await bridge.paintingSource(painting.id)
+		beforeEditing ??= { turns: turns.value, group: group.value, material: material.value }
+		editing.value = painting
+		detection.value = null
+		warnings.value = []
+		camera.value = photoCamera
+		photo.value = file
+		quad.value = corners
+		// the corner at the photo's top left tells how far the view was turned
+		const sums = corners.map((p) => p.x + p.y)
+		turns.value = sums.indexOf(Math.min(...sums))
+		title.value = painting.title
+		group.value = painting.groupId
+		material.value = painting.material ?? ''
+		typingMaterial.value = false
+		widthCm.value = painting.widthCm
+		heightCm.value = painting.heightCm
+		window.scrollTo({ top: 0 })
+	})
+
+function closeEditor() {
+	photo.value = null
+	if (!editing.value) return
+	editing.value = null
+	quad.value = null
+	title.value = ''
+	typingMaterial.value = false
+	widthCm.value = heightCm.value = ''
+	turns.value = beforeEditing!.turns
+	group.value = beforeEditing!.group
+	material.value = beforeEditing!.material
+	beforeEditing = null
+}
+
+const saveChanges = () =>
+	run('Saving changes…', async () => {
+		const { id, isSynced, title: savedTitle } = editing.value!
+		const changed = await bridge.changePainting(id, {
+			quad: quad.value!,
+			groupId: group.value,
+			material: material.value.trim(),
+			title: isSynced ? savedTitle : title.value.trim(),
+			widthCm: Number(widthCm.value),
+			heightCm: Number(heightCm.value),
+		})
+		status.value = await bridge.status()
+		paintings.value = await bridge.paintings()
+		closeEditor()
+		notice.value = `Saved as ${label(changed)}.${isSynced ? ' Press Sync to update the website.' : ''}`
+	})
+
 const save = () =>
 	run('Rectifying…', async () => {
 		await bridge.process({
 			file: photo.value!,
 			quad: quad.value!,
-			...(keptDetection.value ? { bows: detection.value!.sides.map((side) => side.bowPx) } : {}),
 			title: title.value.trim(),
-			group: group.value,
+			groupId: group.value,
 			material: material.value.trim(),
 			...(measured.value ? { widthCm: Number(widthCm.value), heightCm: Number(heightCm.value) } : {}),
 		})
@@ -307,38 +394,44 @@ const cm = (value: number) => value.toFixed(1)
 			</section>
 
 			<section v-else class="editor">
-				<CornerEditor v-model="quad" :src="bridge.photoUrl(photo)" :turns="turns" @turn="turn" @loaded="onPhotoLoaded" />
+				<CornerEditor v-model="quad" :src="bridge.photoUrl(photo, editing?.id)" :turns="turns" :bows="bows" @turn="turn" @loaded="onPhotoLoaded" />
 
-				<form @submit.prevent="canSave && save()">
+				<form @submit.prevent="canSave && (editing ? saveChanges() : save())">
 					<fieldset>
-					<legend>Painting</legend>
-					<p v-for="warning in warnings" :key="warning" class="warning">{{ warning }}</p>
-					<p v-if="keptDetection && detection!.trusted">Corners detected automatically.</p>
-					<p v-else-if="keptDetection" class="warning">Detection unsure — check the corners.</p>
-					<p v-else-if="!detection" class="warning">No painting edges found — set the corners.</p>
-					<p v-if="keptDetection && maxBow > 3" class="muted">
-						Edges bow up to {{ maxBow.toFixed(0) }} px (canvas) — straightened.
-					</p>
-					<p class="muted">
-						Press anywhere and move: the nearest corner follows (Shift = slow). Keys 1–4 select a corner, arrows nudge it.
-						Rough corners? <button type="button" :disabled="!!busy || !quad" @click="snap">Snap to edges</button> (S)
-					</p>
-					<div class="name">
+					<legend>{{ editing ? `Edit ${label(editing)}` : 'Painting' }}</legend>
+					<div class="notes">
+						<p v-for="warning in warnings" :key="warning" class="warning">{{ warning }}</p>
+						<p v-if="keptDetection && !detection!.trusted" class="warning">Detection unsure — check the corners.</p>
+						<p v-else-if="!detection && !editing" class="warning">No painting edges found — set the corners.</p>
+						<p v-if="shape && shape.angleErrorDeg > 1.5" class="warning">Corners {{ shape.angleErrorDeg.toFixed(1) }}° off square — check the corners.</p>
+						<p v-if="sidesAtLimit" class="warning">Curve at the {{ MAX_BOW * 100 }} % limit ({{ sidesAtLimit }}): probably not the painting's edge, check the corners.</p>
+						<p v-if="editing?.isSynced" class="muted">On the website: its name is changed there, everything else arrives with the next sync.</p>
+						<p>
+							<template v-if="keptDetection && detection!.trusted">Corners detected automatically. </template>
+							<template v-if="shape">Tilted {{ shape.tiltDeg.toFixed(1) }}°, corners {{ shape.angleErrorDeg.toFixed(1) }}° off square. </template>
+							<template v-else-if="camera && !camera.focalPx">No focal length in this photo: size ignores tilt. </template>
+							<template v-if="maxBow > 0">Edges curve up to {{ maxBow.toFixed(0) }} px (cyan; dashed: the {{ MAX_BOW * 100 }} % limit): warped straight on save. </template>
+							<template v-if="unclearSides">No clear edge ({{ unclearSides }}): kept straight.</template>
+						</p>
+					</div>
+					<div class="hint">
+						<p class="muted">Press anywhere and move: the nearest corner follows (Shift = slow). Keys 1–4 select a corner, arrows nudge it.</p>
+						<button type="button" :disabled="!!busy || !quad" @click="snap">Snap to edges (S)</button>
+					</div>
+					<div class="fields">
 						<label>
 							Group
-							<select :value="group" @change="chooseGroup(($event.target as HTMLSelectElement).value)">
-								<option v-for="g in status.groups" :key="g" :value="g">{{ g }}</option>
+							<select :value="group" @change="chooseGroup($event.target as HTMLSelectElement)">
+								<option v-for="g in status.groups" :key="g.id" :value="g.id">{{ g.name }}</option>
 								<option :value="NEW_GROUP">New group…</option>
 							</select>
 						</label>
 						<span class="number">#{{ nextNumber }}</span>
-						<label>
+						<label class="grow">
 							Name
-							<input v-model="title" placeholder="Untitled" autofocus />
+							<input v-model="title" placeholder="Untitled" :disabled="editing?.isSynced" autofocus />
 						</label>
-					</div>
-					<div class="name">
-						<label>
+						<label class="grow">
 							Material
 							<select :value="typingMaterial ? NEW_MATERIAL : material" @change="chooseMaterial(($event.target as HTMLSelectElement).value)">
 								<option v-if="!materials.length && !typingMaterial" value="" disabled>–</option>
@@ -346,40 +439,37 @@ const cm = (value: number) => value.toFixed(1)
 								<option :value="NEW_MATERIAL">New material…</option>
 							</select>
 						</label>
-						<label v-if="typingMaterial">
+						<label v-if="typingMaterial" class="grow">
 							New material
 							<input v-model="material" placeholder="e.g. Öl auf Leinwand" autofocus />
 						</label>
 					</div>
-					<p v-if="!calibration" class="warning">
-						First painting of this session: measure it. This calibrates all following paintings — don't move the camera,
-						change zoom or the painting position afterwards.
-					</p>
-					<p v-else-if="calibration.centerDepthCm && camera?.lens && !calibration.lensCorrected" class="warning">
-						Calibrated before lens correction — measure one painting again for exact sizes.
-					</p>
-					<p v-if="calibration && estimate">
-						Size: {{ cm(estimate.widthCm) }} × {{ cm(estimate.heightCm) }} cm
-						<span class="muted">(from calibration; entering a measured size recalibrates)</span>
-					</p>
-					<p v-if="shape" :class="{ warning: shape.angleErrorDeg > 1.5 }">
-						Tilted {{ shape.tiltDeg.toFixed(1) }}° · corners {{ shape.angleErrorDeg.toFixed(1) }}° off square
-						<span v-if="shape.angleErrorDeg > 1.5">— check the corners</span>
-					</p>
-					<p v-else-if="camera && !camera.focalPx" class="muted">No focal length in this photo: size ignores tilt.</p>
-					<div class="size">
+					<div v-if="!editing" class="notes">
+						<p v-if="!calibration" class="warning">
+							First painting of this session: measure it. This calibrates all following paintings — don't move the camera,
+							change zoom or the painting position afterwards.
+						</p>
+						<p v-else-if="calibration.centerDepthCm && camera?.lens && !calibration.lensCorrected" class="warning">
+							Calibrated before lens correction — measure one painting again for exact sizes.
+						</p>
+						<p v-if="calibration && estimate">
+							Size: {{ cm(estimate.widthCm) }} × {{ cm(estimate.heightCm) }} cm
+							<span class="muted">(from calibration; entering a measured size recalibrates)</span>
+						</p>
+					</div>
+					<div class="fields">
 						<label>
 							Width (cm)
-							<input v-model="widthCm" type="number" min="1" step="0.1" :required="!calibration" />
+							<input v-model="widthCm" type="number" min="1" step="0.1" :required="!calibration || !!editing" />
 						</label>
 						<label>
 							Height (cm)
-							<input v-model="heightCm" type="number" min="1" step="0.1" :required="!calibration" />
+							<input v-model="heightCm" type="number" min="1" step="0.1" :required="!calibration || !!editing" />
 						</label>
-					</div>
-					<div class="actions">
-						<button type="submit" :disabled="!canSave">Save painting</button>
-						<button type="button" :disabled="!!busy" @click="photo = null">Discard photo</button>
+						<div class="actions">
+							<button type="submit" :disabled="!canSave">{{ editing ? 'Save changes' : 'Save painting' }}</button>
+							<button type="button" :disabled="!!busy" @click="closeEditor">{{ editing ? 'Cancel' : 'Discard photo' }}</button>
+						</div>
 					</div>
 					</fieldset>
 				</form>
@@ -387,17 +477,25 @@ const cm = (value: number) => value.toFixed(1)
 
 			<fieldset v-if="paintings.length" class="saved">
 				<legend>Captured ({{ paintings.length }})</legend>
-				<figure v-for="painting in paintings" :key="painting.id">
-					<img :src="bridge.thumbUrl(painting.id)" :alt="painting.title" />
-					<figcaption>
+				<button
+					v-for="painting in paintings"
+					:key="painting.id"
+					type="button"
+					:class="{ current: editing?.id === painting.id }"
+					:disabled="!!busy || !painting.original || (!!photo && !editing)"
+					:title="painting.original ? 'Change this painting' : 'Saved without its photo data: cannot be changed'"
+					@click="openPainting(painting)"
+				>
+					<img :src="bridge.thumbUrl(painting)" :alt="painting.title" />
+					<span class="caption">
 						<span><strong>{{ label(painting) }}</strong> {{ painting.title || 'Untitled' }}</span>
 						<span class="muted">
 							{{ cm(painting.widthCm) }} × {{ cm(painting.heightCm) }} cm ·
 							<template v-if="painting.material">{{ painting.material }} · </template>
 							{{ painting.isSynced ? 'synced' : 'not synced' }}
 						</span>
-					</figcaption>
-				</figure>
+					</span>
+				</button>
 			</fieldset>
 
 			<!-- sync to the website: below the captured paintings -->
@@ -437,6 +535,14 @@ const cm = (value: number) => value.toFixed(1)
 	flex-direction: column;
 	gap: var(--gap);
 
+	& p {
+		margin: 0;
+	}
+
+	& .warning {
+		padding: 0.25rem 0.75rem;
+	}
+
 	& header {
 		display: flex;
 		flex-direction: column;
@@ -469,28 +575,58 @@ const cm = (value: number) => value.toFixed(1)
 		max-width: 12rem;
 	}
 
-	& .size,
-	& .name {
+	& .notes {
 		display: flex;
-		align-items: flex-end;
-		gap: var(--gap);
+		flex-direction: column;
+		gap: 0.25rem;
+
+		&:empty,
+		& p:empty {
+			display: none;
+		}
 	}
 
-	& .name label:last-child {
-		flex: 1;
+	& .hint {
+		display: flex;
+		align-items: center;
+		gap: var(--gap);
+
+		& p {
+			flex: 1;
+		}
+	}
+
+	& .fields {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: flex-end;
+		gap: var(--gap);
+
+		& label:not(.grow) input {
+			width: 7rem;
+		}
+
+		& input,
+		& select {
+			height: 2.4rem;
+		}
+
+		& .grow {
+			flex: 1 1 10rem;
+		}
+
+		& .actions {
+			margin-left: auto;
+		}
 	}
 
 	& .number {
-		padding-bottom: 0.4rem;
+		line-height: 2.4rem;
 		font-weight: bold;
 	}
 
 	& .sync {
 		align-items: flex-start;
-
-		& p {
-			margin: 0;
-		}
 
 		& form {
 			display: flex;
@@ -509,8 +645,14 @@ const cm = (value: number) => value.toFixed(1)
 		grid-template-columns: repeat(auto-fill, minmax(8rem, 1fr));
 		gap: var(--gap);
 
-		& figure {
-			margin: 0;
+		& > button {
+			padding: 0.25rem;
+			border-color: transparent;
+			text-align: left;
+
+			&.current {
+				border-color: var(--fg);
+			}
 		}
 
 		& img {
@@ -519,7 +661,7 @@ const cm = (value: number) => value.toFixed(1)
 			object-fit: contain;
 		}
 
-		& figcaption {
+		& .caption {
 			display: flex;
 			flex-direction: column;
 		}

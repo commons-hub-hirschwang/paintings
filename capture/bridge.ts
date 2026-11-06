@@ -1,12 +1,13 @@
 // Client for the local capture bridge (pnpm bridge), reached via the Vite dev proxy.
 import type { Calibration, Camera, Quad } from '../shared/geometry'
 
+export type Group = { id: string; name: string }
 export type BridgeStatus = {
 	cameras: string[]
 	project: string | null
 	projects: string[]
 	// below: only when a project is open
-	groups: string[]
+	groups: Group[]
 	calibration: Calibration | null
 	color: ColorCalibration | null
 	galleryUrl: string
@@ -14,8 +15,10 @@ export type BridgeStatus = {
 	connection: { ok: true; key: string } | { ok: false; error: string }
 	unsynced: number
 }
-// automatic corners (bridge/detect.ts); bowPx per side (top, right, bottom, left), + = bowed inwards
-export type Detection = { quad: Quad; sides: { inliers: number; bowPx: number; contrast: number }[]; trusted: boolean }
+// automatic corners (bridge/detect.ts)
+export type Detection = { quad: Quad; trusted: boolean }
+// curve of a side between its corners: + = inwards; clear: false = no edge found, counts as straight
+export type Bow = { bowPx: number; clear: boolean }
 export type Photo = { file: string; camera: Camera; detection: Detection | null; warnings: string[] }
 export type Box = { left: number; top: number; width: number; height: number }
 export type ColorCalibration = {
@@ -36,11 +39,14 @@ export type LocalPainting = {
 	widthCm: number
 	heightCm: number
 	createdAt: number
+	updatedAt?: number
 	isSynced: boolean
-	group: string
+	groupId: string
 	number: number
 	material?: string
+	original?: unknown // present: can be brought up again
 }
+export type PaintingChange = { quad: Quad; groupId: string; material?: string; title?: string; widthCm: number; heightCm: number }
 
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
 	const response = await fetch(`/bridge${path}`, init).catch(() => {
@@ -62,6 +68,7 @@ export const bridge = {
 	capture: () => call<Photo>('/capture', { method: 'POST' }),
 	upload: (file: File) => call<Photo>('/upload', { method: 'POST', body: file }),
 	detect: (file: string, quad: Quad) => call<Detection>('/detect', json({ file, quad })),
+	bows: (file: string, quad: Quad) => call<Bow[]>('/bows', json({ file, quad })),
 	colorReference: (iso: number) => call<{ file: string; previous: ColorCalibration | null }>('/color/reference', json({ iso })),
 	calibrateColor: (file: string, box: Box, white: number) => call<ColorCalibration>('/color/calibrate', json({ file, box, white })),
 	colorShotUrl: (file: string) => `/bridge/color/shot/${encodeURIComponent(file)}`,
@@ -73,17 +80,18 @@ export const bridge = {
 	process: (body: {
 		file: string
 		quad: Quad
-		bows?: number[]
 		title: string
-		group: string
+		groupId: string
 		material?: string
 		widthCm?: number
 		heightCm?: number
 	}) =>
 		call<LocalPainting>('/process', json(body)),
-	addGroup: () => call<{ group: string }>('/groups', { method: 'POST' }),
+	addGroup: (name: string) => call<Group>('/groups', json({ name })),
 	paintings: () => call<LocalPainting[]>('/paintings'),
 	sync: () => call<{ synced: number; failed: { id: string; error: string }[] }>('/sync', { method: 'POST' }),
-	thumbUrl: (id: string) => `/bridge/paintings/${id}/thumb.jpg`,
-	photoUrl: (file: string) => `/bridge/photo/${encodeURIComponent(file)}`,
+	paintingSource: (id: string) => call<{ file: string; camera: Camera; quad: Quad }>(`/paintings/${id}/source`),
+	changePainting: (id: string, change: PaintingChange) => call<LocalPainting>(`/paintings/${id}`, { ...json(change), method: 'PUT' }),
+	thumbUrl: ({ id, createdAt, updatedAt }: LocalPainting) => `/bridge/paintings/${id}/thumb.jpg?v=${updatedAt ?? createdAt}`,
+	photoUrl: (file: string, painting?: string) => `/bridge/photo/${encodeURIComponent(file)}${painting ? `?painting=${painting}` : ''}`,
 }

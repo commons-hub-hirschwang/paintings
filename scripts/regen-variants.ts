@@ -7,7 +7,7 @@ import { webVariantsVersion } from '../shared/image-variants'
 
 const force = process.argv.includes('--force')
 const paintings = (await (await api('/paintings')).json()) as { id: string; title: string; variants_version: string | null }[]
-const todo = paintings.filter((p) => force || p.variants_version !== webVariantsVersion)
+const todo = paintings.filter((p) => force || p.variants_version?.split('-')[0] !== webVariantsVersion)
 console.log(`${getSettings().galleryUrl}: ${todo.length} of ${paintings.length} paintings to regenerate (version ${webVariantsVersion})`)
 
 for (const painting of todo) {

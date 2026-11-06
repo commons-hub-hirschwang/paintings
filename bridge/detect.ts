@@ -7,7 +7,7 @@
 //     sub-pixel peak, robust quadratic fit (RANSAC + least squares): straight or slightly bowed edges.
 //     Paint strokes and background become outliers. Corners: where neighbouring curves meet.
 import sharp from 'sharp'
-import { reconstruct, type Camera, type Point, type Quad } from '../shared/geometry'
+import { MAX_BOW, reconstruct, type Camera, type Point, type Quad } from '../shared/geometry'
 
 type Grey = { data: Float32Array; width: number; height: number }
 type Line = { n: Point; rho: number } // n·p = rho, |n| = 1 (coarse search)
@@ -369,4 +369,60 @@ function upright(detection: Detection): Detection {
 	const first = sums.indexOf(Math.min(...sums))
 	const turn = <T>(items: T[]) => items.map((_, i) => items[(i + first) % 4]!)
 	return { quad: turn(detection.quad) as Quad, sides: turn(detection.sides) }
+}
+
+// ---------- curve of a side between given corners (found automatically or placed by hand) ----------
+// The corners stay where they are; only the parabola between them is searched: offset(t) = bow·4t(1 − t) along the
+// inward normal. Every allowed bow is tried and the one running along the strongest step wins. A straight line that isn't
+// the painting's edge (wall, frame, painted border) doesn't fit such a curve along its whole length.
+
+// bowPx: + = inwards. clear: false means no edge was found along the side; it then counts as straight
+export type Bow = { bowPx: number; clear: boolean }
+
+const CURVE_SAMPLES = 160
+const STEP_OFFSET = 3 // px on both sides of the curve
+const CLEAR_STEP = 12 // grey levels, as in `support`
+
+function stepsAlong(image: Grey, from: Point, to: Point, n: Point, bow: number) {
+	const steps: number[] = []
+	for (let i = 0; i < CURVE_SAMPLES; i++) {
+		const t = 0.04 + (0.92 * i) / (CURVE_SAMPLES - 1)
+		const offset = bow * 4 * t * (1 - t)
+		const x = from.x + (to.x - from.x) * t + n.x * offset
+		const y = from.y + (to.y - from.y) * t + n.y * offset
+		const step = sample(image, x + n.x * STEP_OFFSET, y + n.y * STEP_OFFSET) - sample(image, x - n.x * STEP_OFFSET, y - n.y * STEP_OFFSET)
+		if (Number.isFinite(step)) steps.push(step)
+	}
+	return steps
+}
+
+function measureBow(image: Grey, from: Point, to: Point): Bow {
+	const n = inward(from, to)
+	const limit = MAX_BOW * Math.hypot(to.x - from.x, to.y - from.y)
+	const STEP = 0.5
+	// consistent sign: the painting is brighter or darker than what's behind it
+	const strength = (bow: number) => Math.abs(stepsAlong(image, from, to, n, bow).reduce((sum, step) => sum + step, 0))
+	const count = Math.floor(limit / STEP)
+	const scores = Array.from({ length: 2 * count + 1 }, (_, k) => strength((k - count) * STEP))
+	const best = scores.indexOf(Math.max(...scores))
+	const steps = stepsAlong(image, from, to, n, (best - count) * STEP)
+	const sign = Math.sign(steps.reduce((sum, step) => sum + step, 0))
+	const clear = steps.filter((step) => step * sign > CLEAR_STEP).length >= CURVE_SAMPLES * MIN_INLIERS
+	if (!clear) return { bowPx: 0, clear }
+	// sub-pixel: parabola through the neighbouring scores
+	const [l, s, r] = [scores[best - 1] ?? 0, scores[best]!, scores[best + 1] ?? 0]
+	const denominator = l - 2 * s + r
+	const shift = denominator ? Math.max(-0.5, Math.min(0.5, (0.5 * (l - r)) / denominator)) : 0
+	const bowPx = Math.max(-limit, Math.min(limit, (best - count + shift) * STEP))
+	return { bowPx, clear }
+}
+
+// the last photo stays in memory: the curves are measured again after every corner change
+let measured: { file: string; image: Promise<Grey> } | null = null
+
+// per side of `quad` (top, right, bottom, left, in the quad's own order)
+export async function measureBows(file: string, quad: Quad): Promise<Bow[]> {
+	if (measured?.file !== file) measured = { file, image: grey(file) }
+	const image = await measured.image
+	return sidesOf(quad).map(([from, to]) => measureBow(image, from, to))
 }

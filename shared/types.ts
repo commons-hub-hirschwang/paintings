@@ -9,7 +9,8 @@ export type Painting = {
 	status: PaintingStatus
 	variants_version: string | null
 	created_at: number
-	// physical stack and position in it, e.g. group "A", number 3 → "A #3"
+	// physical stack and position in it, e.g. number 3 → "Keller #3". group_id is what capture syncs; the name can change
+	group_id: string | null
 	group_name: string | null
 	number: number | null
 	// e.g. "Leinwand", "Öl auf Leinwand" (set at capture)
@@ -33,7 +34,7 @@ export type User = { name: string; role: Role }
 // public: with computed price (rating itself stays private)
 export type PublicPainting = Painting & { price: number | null }
 // admin list: with averaged aesthetic rating and price
-export type AdminPainting = PublicPainting & { rating: number | null; ratings: number }
+export type AdminPainting = PublicPainting & { rating: number | null; ratings: number; deleted_at: number | null }
 // rating list: with the current user's score
 export type RatePainting = Painting & { my_score: number | null }
 

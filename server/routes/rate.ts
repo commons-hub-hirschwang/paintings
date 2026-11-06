@@ -10,9 +10,10 @@ rate.use(requireRole('admin', 'author', 'rater'))
 // all paintings with images (drafts too: rating happens before publishing)
 rate.get('/paintings', async (c) => {
 	const { results } = await c.env.DB.prepare(
-		`SELECT p.*, r.score AS my_score
+		`SELECT p.*, g.name AS group_name, r.score AS my_score
 		 FROM paintings p LEFT JOIN ratings r ON r.painting_id = p.id AND r.admin = ?
-		 WHERE p.variants_version IS NOT NULL ORDER BY p.created_at`,
+		 LEFT JOIN painting_groups g ON g.id = p.group_id
+		 WHERE p.deleted_at IS NULL AND p.variants_version IS NOT NULL ORDER BY p.created_at`,
 	)
 		.bind(c.get('user').name)
 		.all<RatePainting>()

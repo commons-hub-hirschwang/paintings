@@ -16,7 +16,7 @@
 	"d1_databases": [{ "binding": "DB", "database_name": "art-commons-hub", "database_id": "local", "migrations_dir": "migrations" }],
 	"r2_buckets": [{ "binding": "IMAGES", "bucket_name": "art-commons-hub-images" }],
 	"env": {
-		// Commons Hub's account: pnpm run deploy:commons
+		// Commons Hub's account: pnpm run deploy
 		"commons": {
 			"name": "paintings",
 			"routes": [{ "pattern": "paintings.commons-hub.at", "custom_domain": true }],

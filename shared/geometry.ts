@@ -13,6 +13,9 @@ export type Point = { x: number; y: number }
 // clockwise from top-left: TL, TR, BR, BL — in pixels of the (EXIF-oriented) photo
 export type Quad = [Point, Point, Point, Point]
 
+// how far a side may curve away from the straight line between its corners, as a share of its length
+export const MAX_BOW = 0.03
+
 // photo size (EXIF-oriented) and focal length in pixels (null: unknown). Coordinates are those of the
 // lens-corrected photo when `lens` is set (bridge/lens.ts), so the pinhole model holds.
 export type Camera = {

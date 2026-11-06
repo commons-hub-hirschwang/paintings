@@ -69,4 +69,4 @@ pnpm db:migrate:commons
 pnpm wrangler secret put USERS --env commons     # "name:password[:admin],…" (others: rater)
 ```
 
-Then `pnpm deploy:commons`.
+Then `pnpm run deploy`.

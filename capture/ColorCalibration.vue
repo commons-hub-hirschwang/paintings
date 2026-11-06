@@ -138,10 +138,6 @@ function move(event: PointerEvent) {
 	align-items: flex-start;
 	gap: var(--gap);
 
-	& p {
-		margin: 0;
-	}
-
 	& .previous {
 		max-width: 24rem;
 	}

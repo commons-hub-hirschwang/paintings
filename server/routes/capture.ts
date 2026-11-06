@@ -16,6 +16,23 @@ capture.get('/paintings', async (c) => {
 	return c.json(results)
 })
 
+// current group names, shown in the capture tool: { "<id>": "Keller" }
+capture.get('/groups', async (c) => {
+	const { results } = await c.env.DB.prepare(`SELECT id, name FROM painting_groups`).all<{ id: string; name: string }>()
+	return c.json(Object.fromEntries(results.map((g) => [g.id, g.name])))
+})
+
+// groups created on the laptop. Like titles, the name only counts on first upload: after that /admin owns it
+capture.put('/groups', async (c) => {
+	const groups = await c.req.json<{ id: string; name: string }[]>()
+	if (!Array.isArray(groups) || groups.some((g) => !g.id || !g.name)) return c.json({ error: 'invalid groups' }, 400)
+	if (groups.length)
+		await c.env.DB.batch(
+			groups.map((g) => c.env.DB.prepare(`INSERT INTO painting_groups (id, name) VALUES (?, ?) ON CONFLICT (id) DO NOTHING`).bind(g.id, g.name)),
+		)
+	return c.json({ ok: true })
+})
+
 // id comes from the offline capture store; re-posting the same id updates it, so sync retries are safe.
 // The title is only set on insert: names edited on the website win over the capture title.
 capture.post('/paintings', async (c) => {
@@ -24,15 +41,15 @@ capture.post('/paintings', async (c) => {
 		title?: string
 		width_cm?: number
 		height_cm?: number
-		group_name?: string
+		group_id?: string
 		number?: number
 		material?: string
 	}>()
 	if (!body.id) return c.json({ error: 'id required' }, 400)
 	await c.env.DB.prepare(
-		`INSERT INTO paintings (id, title, width_cm, height_cm, group_name, number, material) VALUES (?, ?, ?, ?, ?, ?, ?)
+		`INSERT INTO paintings (id, title, width_cm, height_cm, group_id, number, material) VALUES (?, ?, ?, ?, ?, ?, ?)
 		 ON CONFLICT (id) DO UPDATE SET width_cm = excluded.width_cm, height_cm = excluded.height_cm,
-			group_name = excluded.group_name, number = excluded.number,
+			group_id = excluded.group_id, number = excluded.number,
 			material = COALESCE(excluded.material, paintings.material)`,
 	)
 		.bind(
@@ -40,7 +57,7 @@ capture.post('/paintings', async (c) => {
 			body.title ?? '',
 			body.width_cm ?? null,
 			body.height_cm ?? null,
-			body.group_name ?? null,
+			body.group_id ?? null,
 			body.number ?? null,
 			body.material || null,
 		)
