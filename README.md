@@ -1,6 +1,6 @@
 # paintings.commons-hub.at
 
-Digitalize and sell Felix Fritsch's dad's paintings (~100, located in Austria).
+Digitalize and sell Felix Fritsch's dad's paintings (~500, located in Austria).
 Ideas and their status: `.bowman/` (Aimparency).
 
 ## Parts
