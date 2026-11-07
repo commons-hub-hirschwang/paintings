@@ -43,28 +43,31 @@ grabbed it: `pkill -f gvfs-gphoto2-volume-monitor`.
    Later sessions ask "Same distance from camera to painting as before? (reuse calibration)".
    Calibration lives in `captures/calibration.json`.
 5. Paintings are stored offline in `captures/projects/<name>/paintings/<id>/` (archive, thumb, metadata).
-   Upload them with the **Sync** button or `pnpm sync` (to `GALLERY_URL` in `.env.local`; safe to rerun).
+   Upload what is waiting with the **Sync** button or `pnpm sync` (to `GALLERY_URL` in `.env.local`; safe to rerun).
 
 ## Stacks
 
-Paintings lie in physical stacks. "Keller #3" is a painting's **stack index**: its position in the stack, so it can be found.
-When a painting leaves (**Take out of stack** on `/admin`), the index of every painting after it goes down by one. **Put back
-into stack** returns it to its old place. Selling doesn't take a painting out: it stays findable until someone gets it.
-The index is counted rather than stored, from `stack_order` (set at capture, never changes, can have gaps) and what's still
-there, so the capture laptop and the gallery can't overwrite each other. Deleted paintings don't count.
+**The gallery is the one source of truth.** A stack is just a name. A painting is uploaded once with its stack, name and material, and gets the next `#` of that stack, so its stack + `#` identify it. From then on those belong to the gallery; the capture tool only sends new images and size, by id. Uploads happen in capture order and stop at the first failure.
+
+On `/admin`:
+- **Take out** is a flag, separate from the status: a sold painting stays findable until someone gets it. **Put back where it was** keeps the `#`, **on top** takes the next one.
+- **Move to stack** puts a painting on top of another stack, with its next `#`.
+- **Merge** and **split** stacks, after a preview. Taken-out paintings go along.
+- The **Index** column says where to look in the physical stack: how many paintings before it are still there. It changes, the `#` doesn't.
+
+A project exists only in the capture tool: photos, gallery URL and upload key. Sync only touches the current project.
 
 ## Images
 
-The **archive** (rectified, full resolution, JPEG q90) is the private master in R2 (plus the local copy in
-`captures/paintings/`). Web variants (`detail` 2560/q80, `normal` 1280/q75, `thumb` 384/q70) are derived
-from it, as configured in `shared/image-variants.ts`. After changing that config:
+The **archive** (rectified, full resolution, JPEG q90) and the photos stay on the capture laptop only; back them up yourself. The gallery
+only stores the web variants (`detail` 2560/q80, `normal` 1280/q75, `thumb` 384/q70), derived from it as configured in `shared/image-variants.ts`. After changing that config:
 
 ```sh
-pnpm images:regen           # paintings whose variants are outdated (config version changed)
+pnpm images:regen           # paintings of the current project whose variants are outdated (config version changed)
 pnpm images:regen --force   # all
 ```
 
-Regeneration uses the gallery URL + upload key from the capture settings (`captures/settings.json`).
+Regeneration reads the archives on this laptop and uses the gallery URL + upload key from the capture settings (`captures/settings.json`).
 
 ## Deploy (Commons Hub Cloudflare account)
 

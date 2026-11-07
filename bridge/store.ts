@@ -4,7 +4,7 @@ import { existsSync } from 'node:fs'
 import { mkdir, readdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { Quad } from '../shared/geometry'
-import { legacyStackId, listOutOfStack, projectPath } from './project'
+import { oldStackName, projectPath } from './project'
 
 export type LocalPainting = {
 	id: string
@@ -13,11 +13,10 @@ export type LocalPainting = {
 	heightCm: number
 	createdAt: number
 	updatedAt?: number // images rendered again after a later change
-	synced: string[]
-	// stack (id in stacks.json) and place in it. The order only sorts and never changes, so it can have gaps; what people
-	// see is the index counted from it (withStackIndex): "Keller #3"
-	stackId: string
-	stackOrder: number
+	synced: string[] // the galleries that have it
+	imagesChanged?: boolean // rendered again after its upload: the next sync sends the new images and size
+	// the stack to upload it to, and only that: from then on the gallery owns its stack, and its # (stack + # identify it)
+	stack: string
 	material?: string // e.g. "Leinwand"
 	// crop of the (lens-corrected) photo around the corners (original.jpg) + corners within it, for later corrections
 	// the colour calibration in the archive image; original.jpg stays without its gains. Absent: photo taken without one
@@ -37,31 +36,12 @@ export async function savePainting(painting: LocalPainting, images: { archive: B
 	await writePainting(painting)
 }
 
-// a new painting goes on the end of its stack. Paintings taken out still count here: they could be put back
-export const nextStackOrder = (paintings: LocalPainting[], stackId: string) =>
-	Math.max(-1, ...paintings.filter((p) => p.stackId === stackId).map((p) => p.stackOrder)) + 1
-
-// position in the physical stack: how many paintings before it are still there; null: no longer in it.
-// The same count as in the gallery (server/stacks.ts)
-export function withStackIndex<P extends LocalPainting>(paintings: P[]) {
-	const out = new Set(listOutOfStack())
-	const inStack = paintings.filter((p) => !out.has(p.id))
-	return paintings.map((p) => ({
-		...p,
-		stackIndex: out.has(p.id) ? null : inStack.filter((q) => q.stackId === p.stackId && q.stackOrder < p.stackOrder).length,
-	}))
-}
-
-// painting.json files from before stacks had their name; true: changed
-function upgrade(painting: LocalPainting & { group?: string; groupId?: string; number?: number }) {
-	const old = painting.group !== undefined || painting.groupId !== undefined || painting.number !== undefined
-	if (painting.group !== undefined) painting.stackId = legacyStackId(painting.group) // when they were just a letter
-	if (painting.groupId !== undefined) painting.stackId = painting.groupId
-	if (painting.number !== undefined) painting.stackOrder = painting.number
-	delete painting.group
-	delete painting.groupId
-	delete painting.number
-	return old
+// painting.json files from before a stack was just a name. Only adds the name: nothing old is removed. True: changed
+function upgrade(painting: LocalPainting & { stackId?: string; groupId?: string; group?: string }) {
+	if (painting.stack !== undefined) return false
+	const id = painting.stackId ?? painting.groupId
+	painting.stack = id !== undefined ? oldStackName(id) : (painting.group ?? 'A')
+	return true
 }
 
 export async function readPainting(id: string): Promise<LocalPainting | null> {
@@ -88,11 +68,5 @@ export async function listPaintings(): Promise<LocalPainting[]> {
 			.map(async (id) => JSON.parse(await readFile(paintingFile(id, 'painting.json'), 'utf8')) as LocalPainting),
 	)
 	for (const painting of paintings) if (upgrade(painting)) await writePainting(painting)
-	// paintings from before stacks existed: into stack A by capture time
-	for (const painting of paintings.filter((p) => p.stackId === undefined).sort((a, b) => a.createdAt - b.createdAt)) {
-		painting.stackOrder = nextStackOrder(paintings, legacyStackId('A'))
-		painting.stackId = legacyStackId('A')
-		await writePainting(painting)
-	}
 	return paintings.sort((a, b) => b.createdAt - a.createdAt)
 }

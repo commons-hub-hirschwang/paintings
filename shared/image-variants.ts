@@ -1,5 +1,5 @@
-// Image variants. The archive is the private master (rectified, full resolution);
-// all web variants are derived from it and can be regenerated any time:
+// Image variants. The archive is the master (rectified, full resolution) and stays on the capture laptop; the gallery only
+// gets the web variants derived from it, which the laptop can regenerate any time:
 //   pnpm images:regen            (only paintings whose variants are outdated)
 //   pnpm images:regen --force    (all)
 // Changing anything below changes `webVariantsVersion`, which marks every painting as outdated.
@@ -13,8 +13,6 @@ export const webVariants = {
 } as const
 
 export type WebVariant = keyof typeof webVariants
-// private: archive (rectified master) and original (photo crop around the corners, for later corrections)
-export type Variant = WebVariant | 'archive' | 'original'
 
 export function isWebVariant(name: string): name is WebVariant {
 	return Object.hasOwn(webVariants, name)
@@ -32,4 +30,4 @@ function hash(text: string): string {
 
 export const webVariantsVersion = hash(JSON.stringify(webVariants))
 
-export const imageKey = (paintingId: string, variant: Variant) => `paintings/${paintingId}/${variant}.jpg`
+export const imageKey = (paintingId: string, variant: WebVariant) => `paintings/${paintingId}/${variant}.jpg`

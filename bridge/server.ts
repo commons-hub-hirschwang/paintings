@@ -12,11 +12,11 @@ import { createServer as createViteServer } from 'vite'
 import { Hono } from 'hono'
 import { calibrate, estimateSizeCm, type Calibration, type Quad } from '../shared/geometry'
 import sharp from 'sharp'
-import { checkConnection, fetchStacks, getSettings, saveSettings } from './api'
-import { listPaintings, nextStackOrder, paintingFile, readPainting, savePainting, withStackIndex } from './store'
+import { checkConnection, fetchStackNames, getSettings, saveSettings } from './api'
+import { listPaintings, paintingFile, readPainting, savePainting, type LocalPainting } from './store'
 import { changePainting, correctedPhoto, dirs, ensureDirs, paintingSource, queueRender, rendersDone, resumeRenders, roundCm, type PaintingChange } from './render'
-import { isSynced, syncAll } from './sync'
-import { addStack, applyStackNames, currentProject, listProjects, listStacks, openProject, projectPath, setOutOfStack } from './project'
+import { isSynced, isWaiting, syncAll } from './sync'
+import { currentProject, knownStackNames, listProjects, openProject, projectPath, setKnownStackNames } from './project'
 import { readOriented } from './warp'
 import { applyGains, calibrateColor, clippedShare, colorFile, correctionFor, DEFAULT_ISO, readColorCalibration, shotFile, takeReference, type Box, type ColorCalibration, type Gains } from './color'
 import { ensureLocked, exclusive, exposureMismatch, forgetCameraState, shoot } from './tether'
@@ -69,25 +69,24 @@ app.get('/status', async (c) => {
 	const cameras = stdout.split('\n').slice(2).map((line) => line.trim()).filter(Boolean)
 	const project = currentProject()
 	if (!project) return c.json({ cameras, project, projects: listProjects() })
-	const unsynced = (await listPaintings()).filter((p) => !isSynced(p)).length
 	const { galleryUrl, uploadKey } = getSettings()
 	const connection = await checkConnection()
-	const known = connection.ok ? await fetchStacks() : null
-	if (known) {
-		applyStackNames(known.names)
-		setOutOfStack(known.out)
-	}
+	const names = connection.ok ? await fetchStackNames() : null
+	if (names) setKnownStackNames(names)
+	const waiting = (await listPaintings()).filter(isWaiting)
+	// what the gallery has, and what is on its way there
+	const stacks = [...new Set([...knownStackNames(), ...waiting.map((p) => p.stack)])]
 	return c.json({
 		cameras,
 		project,
 		projects: listProjects(),
-		stacks: listStacks(),
+		stacks: stacks.length ? stacks : ['A'],
 		calibration: await readCalibration(),
 		color: await readColorCalibration(),
 		galleryUrl,
 		hasUploadKey: !!uploadKey,
 		connection,
-		unsynced,
+		unsynced: waiting.length,
 	})
 })
 
@@ -182,10 +181,7 @@ app.delete('/calibration', async (c) => {
 	return c.json({ ok: true })
 })
 
-const forUi = async (id: string) => {
-	const painting = withStackIndex(await listPaintings()).find((p) => p.id === id)!
-	return { ...painting, isSynced: isSynced(painting) }
-}
+const forUi = (painting: LocalPainting) => ({ ...painting, isSynced: isSynced(painting), isWaiting: isWaiting(painting) })
 
 // corners selected → stored locally (works offline; uploaded by /sync). Answers right away, the images follow in the
 // background (see render.ts); everything the next photo depends on is settled here.
@@ -195,12 +191,12 @@ app.post('/process', async (c) => {
 		file: string
 		quad: Quad
 		title: string
-		stackId: string
+		stack: string
 		material?: string
 		widthCm?: number
 		heightCm?: number
 	}>()
-	if (!listStacks().some((s) => s.id === body.stackId)) return c.json({ error: `unknown stack "${body.stackId}"` }, 400)
+	if (!body.stack?.trim()) return c.json({ error: 'a painting needs a stack' }, 400)
 	const photo = await correctedPhoto(body.file)
 	if (!photo) return c.json({ error: `no photo "${body.file}"` }, 404)
 	const { camera } = photo
@@ -226,8 +222,7 @@ app.post('/process', async (c) => {
 		heightCm: roundCm(size.heightCm),
 		createdAt: Date.now(),
 		synced: [],
-		stackId: body.stackId,
-		stackOrder: nextStackOrder(await listPaintings(), body.stackId),
+		stack: body.stack.trim(),
 		...(body.material?.trim() ? { material: body.material.trim() } : {}),
 		...(color
 			? { color: { shutter: color.shutter, kelvin: color.kelvin, iso: color.iso, fNumber: color.fNumber, gains: color.gains, calibratedAt: color.createdAt } }
@@ -236,11 +231,11 @@ app.post('/process', async (c) => {
 	}
 	await savePainting(painting)
 	queueRender(painting.id)
-	return c.json({ painting: await forUi(painting.id), calibration })
+	return c.json({ painting: forUi(painting), calibration })
 })
 
 app.get('/paintings', async (c) =>
-	c.json(withStackIndex(await listPaintings()).map((painting) => ({ ...painting, isSynced: isSynced(painting) }))),
+	c.json((await listPaintings()).map(forUi)),
 )
 
 // bring up a saved painting in the editor
@@ -248,7 +243,7 @@ app.get('/paintings/:id/source', async (c) => c.json(await paintingSource(basena
 
 app.put('/paintings/:id', async (c) => {
 	const painting = await changePainting(basename(c.req.param('id')), await c.req.json<PaintingChange>())
-	return c.json(await forUi(painting.id))
+	return c.json(forUi(painting))
 })
 
 app.get('/paintings/:id/thumb.jpg', async (c) => {
@@ -269,9 +264,6 @@ app.post('/sync', async (c) => {
 	await rendersDone()
 	return c.json(await syncAll(console.log))
 })
-
-// new stack in the current project
-app.post('/stacks', async (c) => c.json(addStack((await c.req.json<{ name: string }>()).name)))
 
 // open an existing project or create a new one (e.g. "test", "attic", a client's collection)
 app.post('/projects', async (c) => {

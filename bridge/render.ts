@@ -9,9 +9,10 @@ import { cameraOf } from './camera'
 import { lensOf } from './lens'
 import { applyGains } from './color'
 import { measureBows } from './detect'
-import { listStacks, projectPath } from './project'
+import { projectPath } from './project'
+import { isSynced } from './sync'
 import { correctLens, warpToRectangle } from './warp'
-import { listPaintings, nextStackOrder, readPainting, savePainting, writePainting, type LocalPainting } from './store'
+import { listPaintings, readPainting, savePainting, writePainting, type LocalPainting } from './store'
 
 // raw: the camera's photos (untouched); corrected: lens-corrected copies, in which corners are picked
 export const dirs = { get raw() { return projectPath('raw') }, get corrected() { return projectPath('corrected') } }
@@ -120,24 +121,23 @@ export async function paintingSource(id: string) {
 	return { file: painting.original.photo, camera: photo.camera, quad: cornersOf(painting.original) }
 }
 
-export type PaintingChange = Size & { quad: Quad; stackId: string; material?: string; title?: string }
+export type PaintingChange = Size & { quad: Quad; stack?: string; material?: string; title?: string }
 
 // Change a saved painting. Its colour stays the one it was photographed with, and a size entered here doesn't touch
-// the distance calibration. Moved to another stack: to its end. New pixels (corners, turn, size): rendered again from the photo, and
-// uploaded again by the next sync.
+// the distance calibration. New pixels (corners, turn, size): rendered again from the photo, and uploaded again by the next
+// sync. Stack, name and material only until its upload: then they belong to the gallery.
 export async function changePainting(id: string, change: PaintingChange) {
 	const painting = await readPainting(id)
 	if (painting?.rendering) throw new Error('this painting is still being rendered')
 	if (!painting?.original) throw new Error('this painting was saved without its photo data')
-	if (!listStacks().some((s) => s.id === change.stackId)) throw new Error(`unknown stack "${change.stackId}"`)
 	const { widthCm, heightCm } = { widthCm: roundCm(change.widthCm), heightCm: roundCm(change.heightCm) }
 	const { material: _, ...rest } = painting
-	const material = change.material?.trim()
+	const uploaded = isSynced(painting)
+	const material = uploaded ? painting.material : change.material?.trim()
 	const changed: LocalPainting = {
 		...rest,
-		title: change.title ?? painting.title,
-		stackId: change.stackId,
-		stackOrder: change.stackId === painting.stackId ? painting.stackOrder : nextStackOrder(await listPaintings(), change.stackId),
+		title: uploaded ? painting.title : (change.title ?? painting.title),
+		stack: uploaded ? painting.stack : change.stack?.trim() || painting.stack,
 		...(material ? { material } : {}),
 		widthCm,
 		heightCm,
@@ -154,7 +154,7 @@ export async function changePainting(id: string, change: PaintingChange) {
 	const rendered = {
 		...changed,
 		updatedAt: Date.now(),
-		synced: [],
+		...(uploaded ? { imagesChanged: true } : {}),
 		original: { photo: painting.original.photo, crop: original.crop, quad: original.quad },
 	}
 	await savePainting(rendered, { archive, thumb, original: original.jpeg })

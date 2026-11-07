@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import LoginGate from '@/components/LoginGate.vue'
+import StackRange from '@/components/StackRange.vue'
 import { authed, user } from '@/auth'
 import { imageUrl } from '@/api'
 import { paintingStatuses, sizeLabel, type AdminPainting, type PaintingStatus, type UploadKey } from '../../shared/types'
@@ -64,20 +65,22 @@ const rename = (painting: AdminPainting, title: string) =>
 const setStatus = (painting: AdminPainting, status: PaintingStatus) =>
 	act(() => authed(`/api/admin/paintings/${painting.id}`, { method: 'PATCH', body: JSON.stringify({ status }) }))
 
-const renameStack = (id: string, name: string) =>
-	act(() => authed(`/api/admin/stacks/${id}`, { method: 'PUT', body: JSON.stringify({ name }) }))
+const renameStack = (stack: string, name: string) =>
+	act(() => authed('/api/admin/stacks/rename', { method: 'PUT', body: JSON.stringify({ stack, name }) }))
 
 // filters (null = all); deleted paintings only show up when filtering for them
 const stackFilter = ref<string | null>(null)
-const indexFilter = ref('')
+const numberFilter = ref('')
 const statusFilter = ref<PaintingStatus | 'deleted' | 'taken out' | null>(null)
-// [id, name]; id '' = paintings without a stack
-const stacks = computed(() => [...new Map(paintings.value.map((p) => [p.stack_id ?? '', p.stack_name ?? '']))])
+// the stacks in the list ('' = paintings without one); the admin list is sorted by stack and #
+const stacks = computed(() => [...new Set(paintings.value.map((p) => p.stack ?? ''))])
+const namedStacks = computed(() => stacks.value.filter(Boolean))
+const stackPaintings = (stack: string) => paintings.value.filter((p) => p.stack === stack && p.deleted_at === null)
 const visible = computed(() =>
 	paintings.value.filter(
 		(p) =>
-			(stackFilter.value === null || (p.stack_id ?? '') === stackFilter.value) &&
-			(indexFilter.value === '' || String(p.stack_index) === indexFilter.value) &&
+			(stackFilter.value === null || (p.stack ?? '') === stackFilter.value) &&
+			(numberFilter.value === '' || String(p.number) === numberFilter.value) &&
 			(statusFilter.value === 'deleted'
 				? p.deleted_at !== null
 				: p.deleted_at === null &&
@@ -106,10 +109,51 @@ const setSelectedDeleted = (deleted: boolean) =>
 		selected.value = new Set()
 	})
 
-const setSelectedTakenOut = (out: boolean) =>
+const setSelectedTakenOut = (out: boolean, onTop = false) =>
 	act(async () => {
-		await authed('/api/admin/paintings/taken-out', { method: 'PUT', body: JSON.stringify({ ids: picked.value, out }) })
+		await authed('/api/admin/paintings/taken-out', { method: 'PUT', body: JSON.stringify({ ids: picked.value, out, onTop }) })
 		selected.value = new Set()
+	})
+
+const moveTo = ref('')
+const moveSelected = () =>
+	act(async () => {
+		await authed('/api/admin/paintings/stack', { method: 'PUT', body: JSON.stringify({ ids: picked.value, stack: moveTo.value }) })
+		selected.value = new Set()
+		moveTo.value = ''
+	})
+
+// merge: `upper` is laid on top of `lower`. The preview shows what happens; its button is the confirmation
+const merging = ref<{ lower: string; upper: string; name: string } | null>(null)
+watch([() => merging.value?.lower, () => merging.value?.upper], ([lower, upper]) => {
+	if (merging.value) merging.value.name = `${lower} + ${upper}`
+})
+const startMerge = () => {
+	const [lower = '', upper = ''] = namedStacks.value
+	splitting.value = null
+	merging.value = { lower, upper, name: `${lower} + ${upper}` }
+}
+const merge = () =>
+	act(async () => {
+		await authed('/api/admin/stacks/merge', { method: 'POST', body: JSON.stringify(merging.value) })
+		merging.value = null
+	})
+
+// split: the painting with # `at` and all above become their own stack
+const splitting = ref<{ stack: string; at: number | ''; lower: string; upper: string } | null>(null)
+const startSplit = (stack: string) => {
+	merging.value = null
+	splitting.value = { stack, at: stackPaintings(stack)[1]?.number ?? '', lower: `${stack} A`, upper: `${stack} B` }
+}
+const splitParts = computed(() => {
+	const { stack, at } = splitting.value ?? { stack: '', at: '' }
+	const all = stackPaintings(stack)
+	return at === '' ? { lower: all, upper: [] } : { lower: all.filter((p) => p.number! < at), upper: all.filter((p) => p.number! >= at) }
+})
+const split = () =>
+	act(async () => {
+		await authed('/api/admin/stacks/split', { method: 'POST', body: JSON.stringify(splitting.value) })
+		splitting.value = null
 	})
 
 const createKey = () =>
@@ -129,19 +173,70 @@ const date = (seconds: number | null) => (seconds ? new Date(seconds * 1000).toL
 		<LoginGate :roles="['admin']">
 			<p v-if="error" class="error">{{ error }}</p>
 
-			<section v-if="stacks.some(([id]) => id)">
+			<section v-if="namedStacks.length">
 				<h2>Stacks</h2>
-				<p class="muted">Rename a stack here; the new name is used everywhere, including the capture tool.</p>
+				<p class="muted">The name is the stack: renaming here is what the capture tool sees next. Split and merge need a look at the preview first.</p>
 				<div class="actions">
-					<template v-for="[id, name] in stacks" :key="id">
+					<span v-for="name in namedStacks" :key="name" class="stack">
 						<input
-							v-if="id"
 							:value="name"
 							aria-label="Stack name"
-							@change="renameStack(id, ($event.target as HTMLInputElement).value)"
+							@change="renameStack(name, ($event.target as HTMLInputElement).value)"
 							@keydown.enter="($event.target as HTMLInputElement).blur()"
 						/>
-					</template>
+						<button :disabled="stackPaintings(name).length < 2" @click="startSplit(name)">Split</button>
+					</span>
+					<button :disabled="namedStacks.length < 2" @click="startMerge">Merge two stacks</button>
+				</div>
+
+				<div v-if="merging" class="dialog">
+					<label>
+						Below
+						<select v-model="merging.lower">
+							<option v-for="name in namedStacks" :key="name">{{ name }}</option>
+						</select>
+					</label>
+					<label>
+						On top
+						<select v-model="merging.upper">
+							<option v-for="name in namedStacks" :key="name">{{ name }}</option>
+						</select>
+					</label>
+					<label>
+						Merged stack name
+						<input v-model.trim="merging.name" />
+					</label>
+					<p class="muted">The paintings on top get new numbers, continuing above the ones below.</p>
+					<StackRange :name="`${merging.upper} (on top)`" :paintings="stackPaintings(merging.upper)" />
+					<StackRange :name="`${merging.lower} (below)`" :paintings="stackPaintings(merging.lower)" />
+					<div class="actions">
+						<button :disabled="merging.lower === merging.upper || !merging.name" @click="merge">Merge into "{{ merging.name }}"</button>
+						<button @click="merging = null">Cancel</button>
+					</div>
+				</div>
+
+				<div v-if="splitting" class="dialog">
+					<label>
+						Split {{ splitting.stack }} at #
+						<input v-model.number="splitting.at" type="number" min="0" />
+					</label>
+					<label>
+						Lower stack name
+						<input v-model.trim="splitting.lower" />
+					</label>
+					<label>
+						Upper stack name
+						<input v-model.trim="splitting.upper" />
+					</label>
+					<p class="muted">The upper part gets new numbers from #0. Taken-out paintings go with their part.</p>
+					<StackRange :name="splitting.upper" :paintings="splitParts.upper" />
+					<StackRange :name="splitting.lower" :paintings="splitParts.lower" />
+					<div class="actions">
+						<button :disabled="!splitParts.lower.length || !splitParts.upper.length || !splitting.lower || !splitting.upper" @click="split">
+							Split into "{{ splitting.lower }}" and "{{ splitting.upper }}"
+						</button>
+						<button @click="splitting = null">Cancel</button>
+					</div>
 				</div>
 			</section>
 
@@ -152,12 +247,12 @@ const date = (seconds: number | null) => (seconds ? new Date(seconds * 1000).toL
 						Stack
 						<select v-model="stackFilter">
 							<option :value="null">all</option>
-							<option v-for="[id, name] in stacks" :key="id" :value="id">{{ name || 'none' }}</option>
+							<option v-for="name in stacks" :key="name" :value="name">{{ name || 'none' }}</option>
 						</select>
 					</label>
 					<label>
-						Index
-						<input v-model.trim="indexFilter" type="search" inputmode="numeric" placeholder="all" />
+						#
+						<input v-model.trim="numberFilter" type="search" inputmode="numeric" placeholder="all" />
 					</label>
 					<label>
 						Status
@@ -177,8 +272,21 @@ const date = (seconds: number | null) => (seconds ? new Date(seconds * 1000).toL
 							<option v-for="status in paintingStatuses" :key="status">{{ status }}</option>
 						</select>
 					</label>
-					<button v-if="statusFilter === 'taken out'" @click="setSelectedTakenOut(false)">Put back into stack</button>
+					<template v-if="statusFilter === 'taken out'">
+						<button @click="setSelectedTakenOut(false)">Put back where it was</button>
+						<button @click="setSelectedTakenOut(false, true)">Put back on top</button>
+					</template>
 					<button v-else-if="statusFilter !== 'deleted'" @click="setSelectedTakenOut(true)">Take out of stack</button>
+					<template v-if="statusFilter !== 'deleted'">
+						<label>
+							Move to stack
+							<input v-model.trim="moveTo" list="stack-names" placeholder="name" />
+							<datalist id="stack-names">
+								<option v-for="name in namedStacks" :key="name" :value="name"></option>
+							</datalist>
+						</label>
+						<button :disabled="!moveTo" @click="moveSelected">Move</button>
+					</template>
 					<button v-if="statusFilter === 'deleted'" @click="setSelectedDeleted(false)">Restore</button>
 					<button v-else @click="setSelectedDeleted(true)">Delete</button>
 					<button @click="selected = new Set()">Clear selection</button>
@@ -187,6 +295,7 @@ const date = (seconds: number | null) => (seconds ? new Date(seconds * 1000).toL
 					<tr>
 						<th></th>
 						<th>Stack</th>
+						<th>#</th>
 						<th>Index</th>
 						<th>Name</th>
 						<th>Size (cm)</th>
@@ -201,7 +310,8 @@ const date = (seconds: number | null) => (seconds ? new Date(seconds * 1000).toL
 						<td>
 							<img v-if="painting.variants_version" :src="imageUrl(painting, 'thumb')" :alt="painting.title" loading="lazy" />
 						</td>
-						<td>{{ painting.stack_name }}</td>
+						<td>{{ painting.stack }}</td>
+						<td>{{ painting.number }}</td>
 						<td>{{ painting.taken_out_at ? 'taken out' : painting.stack_index }}</td>
 						<td>
 							<input
@@ -313,6 +423,11 @@ const date = (seconds: number | null) => (seconds ? new Date(seconds * 1000).toL
 
 	& .bulk {
 		align-items: flex-end;
+	}
+
+	& .stack {
+		display: flex;
+		gap: 0.3rem;
 	}
 
 	& .pricing {

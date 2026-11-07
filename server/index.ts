@@ -14,7 +14,7 @@ const app = new Hono<Env>()
 // ---------- public ----------
 
 const publicSelect = `SELECT p.id, p.title, p.width_cm, p.height_cm, p.material, p.status, p.variants_version, p.created_at,
-	NULL AS stack_id, NULL AS stack_name, NULL AS stack_index,
+	NULL AS stack, NULL AS number,
 	(SELECT AVG(score) FROM ratings WHERE painting_id = p.id) AS rating
 	FROM paintings p WHERE p.status != 'draft' AND p.deleted_at IS NULL AND p.variants_version IS NOT NULL`
 

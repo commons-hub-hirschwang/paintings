@@ -85,7 +85,7 @@ const paintings = ref<LocalPainting[]>([])
 
 async function refreshPaintings() {
 	paintings.value = await bridge.paintings()
-	if (status.value) status.value.unsynced = paintings.value.filter((p) => !p.isSynced).length
+	if (status.value) status.value.unsynced = paintings.value.filter((p) => p.isWaiting).length
 }
 // paintings are finished in the background: followed until they are
 const rendering = computed(() => paintings.value.some((p) => p.rendering && !p.rendering.error))
@@ -120,7 +120,7 @@ const refreshStatus = () =>
 		status.value = await bridge.status()
 		paintings.value = status.value.project ? await bridge.paintings() : []
 		// keep the chosen stack; default: stack of the last capture
-		if (!status.value.stacks?.some((s) => s.id === stack.value)) stack.value = paintings.value[0]?.stackId ?? status.value.stacks?.[0]?.id ?? ''
+		if (!status.value.stacks?.includes(stack.value)) stack.value = paintings.value[0]?.stack ?? status.value.stacks?.[0] ?? ''
 		if (!material.value) material.value = paintings.value[0]?.material ?? ''
 		askReuse.value = !!status.value.calibration && sessionStorage.getItem(confirmedKey()) !== 'yes'
 		askColorReuse.value = !!status.value.color && sessionStorage.getItem(colorConfirmedKey()) !== 'yes'
@@ -156,24 +156,14 @@ const openProject = (name: string, create = false) =>
 		await refreshStatus()
 	})
 
-// "New stack…" in the select asks for a name, creates the stack and selects it
+// "New stack…" in the select asks for a name: just that name, the gallery has it from the first upload
 function chooseStack(select: HTMLSelectElement) {
 	if (select.value !== NEW_STACK) return (stack.value = select.value)
 	const name = prompt('Name of the new stack')?.trim()
 	select.value = stack.value
-	if (!name) return
-	run('Creating stack…', async () => {
-		const { id } = await bridge.addStack(name)
-		status.value = await bridge.status()
-		stack.value = id
-	})
+	if (name) stack.value = name
 }
-// where the painting in the editor is, or will be, in the chosen stack: new ones go on its end
-const stackIndex = computed(() =>
-	editing.value?.stackId === stack.value ? editing.value.stackIndex : paintings.value.filter((p) => p.stackId === stack.value && p.stackIndex !== null).length,
-)
-const stackName = (id: string) => status.value?.stacks?.find((s) => s.id === id)?.name ?? '?'
-const label = (p: { stackId: string; stackIndex: number | null }) => `${stackName(p.stackId)} ${p.stackIndex === null ? '(taken out)' : `#${p.stackIndex}`}`
+const stackChoices = computed(() => [...new Set([...(status.value?.stacks ?? []), stack.value])].filter(Boolean))
 
 const calibration = computed(() => status.value?.calibration ?? null)
 const color = computed(() => status.value?.color ?? null)
@@ -273,7 +263,7 @@ const openPainting = (painting: LocalPainting) =>
 		const sums = corners.map((p) => p.x + p.y)
 		turns.value = sums.indexOf(Math.min(...sums))
 		title.value = painting.title
-		stack.value = painting.stackId
+		stack.value = painting.stack
 		material.value = painting.material ?? ''
 		typingMaterial.value = false
 		widthCm.value = painting.widthCm
@@ -300,7 +290,7 @@ const saveChanges = () =>
 		const { id, isSynced, title: savedTitle } = editing.value!
 		const changed = await bridge.changePainting(id, {
 			quad: quad.value!,
-			stackId: stack.value,
+			stack: stack.value,
 			material: material.value.trim(),
 			title: isSynced ? savedTitle : title.value.trim(),
 			widthCm: Number(widthCm.value),
@@ -309,7 +299,7 @@ const saveChanges = () =>
 		status.value = await bridge.status()
 		paintings.value = await bridge.paintings()
 		closeEditor()
-		notice.value = `Saved as ${label(changed)}.${isSynced ? ' Press Sync to update the website.' : ''}`
+		notice.value = `Saved. ${changed.isWaiting ? 'Press Sync to send it to the website.' : ''}`
 	})
 
 // answers right away: the images are made in the background, the next photo can be taken
@@ -319,7 +309,7 @@ const save = () =>
 			file: photo.value!,
 			quad: quad.value!,
 			title: title.value.trim(),
-			stackId: stack.value,
+			stack: stack.value,
 			material: material.value.trim(),
 			...(measured.value ? { widthCm: Number(widthCm.value), heightCm: Number(heightCm.value) } : {}),
 		})
@@ -333,7 +323,7 @@ const save = () =>
 		typingMaterial.value = false
 		widthCm.value = heightCm.value = ''
 		window.scrollTo({ top: 0 })
-		savedAs.value = label(painting)
+		savedAs.value = painting.stack
 	})
 
 const sync = () =>
@@ -342,7 +332,7 @@ const sync = () =>
 		notice.value = `${synced} synced to ${status.value?.galleryUrl} (as drafts, not public yet)`
 		status.value = await bridge.status()
 		paintings.value = await bridge.paintings()
-		if (failed.length) error.value = `${failed.length} failed: ${failed[0]!.error}`
+		if (failed.length) error.value = `Stopped at the first failure, the rest stays waiting: ${failed[0]!.error}`
 	})
 const cm = (value: number) => value.toFixed(1)
 </script>
@@ -430,14 +420,14 @@ const cm = (value: number) => value.toFixed(1)
 
 				<form @submit.prevent="canSave && (editing ? saveChanges() : save())">
 					<fieldset>
-					<legend>{{ editing ? `Edit ${label(editing)}` : 'Painting' }}</legend>
+					<legend>{{ editing ? `Edit ${editing.title || 'Untitled'}` : 'Painting' }}</legend>
 					<div class="notes">
 						<p v-for="warning in warnings" :key="warning" class="warning">{{ warning }}</p>
 						<p v-if="keptDetection && !detection!.trusted" class="warning">Detection unsure — check the corners.</p>
 						<p v-else-if="!detection && !editing" class="warning">No painting edges found — set the corners.</p>
 						<p v-if="shape && shape.angleErrorDeg > 1.5" class="warning">Corners {{ shape.angleErrorDeg.toFixed(1) }}° off square — check the corners.</p>
 						<p v-if="sidesAtLimit" class="warning">Curve at the {{ MAX_BOW * 100 }} % limit ({{ sidesAtLimit }}): probably not the painting's edge, check the corners.</p>
-						<p v-if="editing?.isSynced" class="muted">On the website: its name is changed there, everything else arrives with the next sync.</p>
+						<p v-if="editing?.isSynced" class="muted">On the website: stack, name and material are changed there. Corners and size arrive with the next sync.</p>
 						<p>
 							<template v-if="keptDetection && detection!.trusted">Corners detected automatically. </template>
 							<template v-if="shape">Tilted {{ shape.tiltDeg.toFixed(1) }}°, corners {{ shape.angleErrorDeg.toFixed(1) }}° off square. </template>
@@ -453,19 +443,18 @@ const cm = (value: number) => value.toFixed(1)
 					<div class="fields">
 						<label>
 							Stack
-							<select :value="stack" @change="chooseStack($event.target as HTMLSelectElement)">
-								<option v-for="s in status.stacks" :key="s.id" :value="s.id">{{ s.name }}</option>
+							<select :value="stack" :disabled="editing?.isSynced" @change="chooseStack($event.target as HTMLSelectElement)">
+								<option v-for="s in stackChoices" :key="s">{{ s }}</option>
 								<option :value="NEW_STACK">New stack…</option>
 							</select>
 						</label>
-						<span class="stack-index">{{ stackIndex === null ? 'taken out' : `#${stackIndex}` }}</span>
 						<label class="grow">
 							Name
 							<input v-model="title" placeholder="Untitled" :disabled="editing?.isSynced" autofocus />
 						</label>
 						<label class="grow">
 							Material
-							<select :value="typingMaterial ? NEW_MATERIAL : material" @change="chooseMaterial(($event.target as HTMLSelectElement).value)">
+							<select :value="typingMaterial ? NEW_MATERIAL : material" :disabled="editing?.isSynced" @change="chooseMaterial(($event.target as HTMLSelectElement).value)">
 								<option v-if="!materials.length && !typingMaterial" value="" disabled>–</option>
 								<option v-for="m in materials" :key="m" :value="m">{{ m }}</option>
 								<option :value="NEW_MATERIAL">New material…</option>
@@ -508,7 +497,7 @@ const cm = (value: number) => value.toFixed(1)
 			</section>
 
 			<section v-if="savedAs" class="next" @keydown.esc="stop">
-				<p>Saved as {{ savedAs }}</p>
+				<p>Saved to stack {{ savedAs }}</p>
 				<div>
 					<button type="button" @click="stop">Stop</button>
 					<button ref="nextButton" type="button" :disabled="!canCapture" @click="captureNext">Capture next</button>
@@ -529,11 +518,11 @@ const cm = (value: number) => value.toFixed(1)
 					<span v-if="painting.rendering" class="pending muted">{{ painting.rendering.error ? 'Failed' : 'Rendering…' }}</span>
 					<img v-else :src="bridge.thumbUrl(painting)" :alt="painting.title" />
 					<span class="caption">
-						<span><strong>{{ label(painting) }}</strong> {{ painting.title || 'Untitled' }}</span>
+						<span><strong>{{ painting.stack }}</strong> {{ painting.title || 'Untitled' }}</span>
 						<span class="muted">
 							{{ cm(painting.widthCm) }} × {{ cm(painting.heightCm) }} cm ·
 							<template v-if="painting.material">{{ painting.material }} · </template>
-							{{ painting.isSynced ? 'synced' : 'not synced' }}
+							{{ painting.isWaiting ? 'waiting' : 'uploaded' }}
 						</span>
 						<span v-if="painting.rendering?.error" class="error">{{ painting.rendering.error }} (tried again when the capture tool restarts)</span>
 					</span>
@@ -544,7 +533,7 @@ const cm = (value: number) => value.toFixed(1)
 			<fieldset class="sync">
 				<legend>Sync</legend>
 				<p>
-					{{ status.unsynced }} not synced to {{ status.galleryUrl }}
+					{{ status.unsynced }} waiting for {{ status.galleryUrl }}
 					<span :class="status.connection.ok ? 'muted' : 'error'">
 						({{ status.connection.ok ? `key "${status.connection.key}"` : status.hasUploadKey ? 'not reachable / key invalid' : 'no upload key' }})
 					</span>
@@ -686,11 +675,6 @@ const cm = (value: number) => value.toFixed(1)
 		& .actions {
 			margin-left: auto;
 		}
-	}
-
-	& .stack-index {
-		line-height: 2.4rem;
-		font-weight: bold;
 	}
 
 	& .sync {

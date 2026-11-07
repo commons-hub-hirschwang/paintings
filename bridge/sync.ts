@@ -1,46 +1,39 @@
-import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { api, getSettings, json } from './api'
 import { publishWebVariants } from './images'
-import { listStacks } from './project'
 import { listPaintings, paintingFile, writePainting, type LocalPainting } from './store'
 
 export const isSynced = (painting: { synced: string[] }) => painting.synced.includes(getSettings().galleryUrl)
+// something for the next sync: a new painting, or new images of an uploaded one
+export const isWaiting = (painting: LocalPainting) => !isSynced(painting) || !!painting.imagesChanged
 
-const upload = async (id: string, variant: 'archive' | 'original', file: Buffer) =>
-	api(`/paintings/${id}/images/${variant}`, { method: 'PUT', body: new Uint8Array(file), headers: { 'content-type': 'image/jpeg' } })
-
-const postPainting = (p: LocalPainting) =>
-	api('/paintings', {
-		method: 'POST',
-		...json({ id: p.id, title: p.title, width_cm: p.widthCm, height_cm: p.heightCm, stack_id: p.stackId, stack_order: p.stackOrder, material: p.material }),
+// Once per painting, as the gallery owns these afterwards. Already there (409): a retry after a sync that broke off
+async function create(p: LocalPainting) {
+	const body = { id: p.id, title: p.title, width_cm: p.widthCm, height_cm: p.heightCm, stack: p.stack, material: p.material }
+	await api('/uploads', { method: 'POST', ...json(body) }).catch((error: Error) => {
+		if (!error.message.includes(': 409 ')) throw error
 	})
+}
 
-// Upload all local paintings the gallery doesn't have yet; metadata (stack, order, size, material) of the others is
-// re-sent (cheap; the title only counts on first upload). Idempotent: safe to rerun after failures.
+// Upload what is waiting in this project, in capture order: the gallery numbers paintings as they arrive, so that order is
+// the physical one. Stops at the first failure, as anything after it would get the wrong #. Safe to rerun.
 export async function syncAll(log: (line: string) => void = () => {}) {
 	const { galleryUrl } = getSettings()
-	// without images yet: not ready to upload (they may have failed, or be rendering in a running capture tool)
-	const paintings = (await listPaintings()).filter((p) => !p.rendering)
-	// stacks first: paintings refer to them
-	await api('/stacks', { method: 'PUT', ...json(listStacks()) })
-	for (const painting of paintings.filter(isSynced)) await postPainting(painting)
-	const todo = paintings.filter((p) => !isSynced(p))
-	const failed: { id: string; error: string }[] = []
-	for (const painting of todo) {
+	const waiting = (await listPaintings()).filter((p) => isWaiting(p) && !p.rendering).sort((a, b) => a.createdAt - b.createdAt)
+	let synced = 0
+	for (const painting of waiting) {
 		try {
-			const archive = await readFile(paintingFile(painting.id, 'archive.jpg'))
-			await postPainting(painting)
-			await upload(painting.id, 'archive', archive)
-			if (existsSync(paintingFile(painting.id, 'original.jpg')))
-				await upload(painting.id, 'original', await readFile(paintingFile(painting.id, 'original.jpg')))
-			await publishWebVariants(painting.id, archive)
-			await writePainting({ ...painting, synced: [...painting.synced, galleryUrl] })
+			if (!isSynced(painting)) await create(painting)
+			await api(`/paintings/${painting.id}`, { method: 'PUT', ...json({ width_cm: painting.widthCm, height_cm: painting.heightCm }) })
+			await publishWebVariants(painting.id, await readFile(paintingFile(painting.id, 'archive.jpg')))
+			const { imagesChanged: _, ...done } = painting
+			await writePainting({ ...done, synced: [...new Set([...painting.synced, galleryUrl])] })
+			synced++
 			log(`✓ ${painting.title || 'Untitled'}`)
 		} catch (error) {
-			failed.push({ id: painting.id, error: (error as Error).message })
 			log(`✗ ${painting.title || 'Untitled'}: ${(error as Error).message}`)
+			return { synced, failed: [{ id: painting.id, error: (error as Error).message }] }
 		}
 	}
-	return { synced: todo.length - failed.length, failed }
+	return { synced, failed: [] as { id: string; error: string }[] }
 }

@@ -3,7 +3,6 @@
 import { Hono } from 'hono'
 import type { RatePainting } from '../../shared/types'
 import { requireRole, type Env } from '../auth'
-import { stackIndexSql } from '../stacks'
 
 const rate = new Hono<Env>()
 rate.use(requireRole('admin', 'author', 'rater'))
@@ -11,9 +10,8 @@ rate.use(requireRole('admin', 'author', 'rater'))
 // all paintings with images (drafts too: rating happens before publishing)
 rate.get('/paintings', async (c) => {
 	const { results } = await c.env.DB.prepare(
-		`SELECT p.*, s.name AS stack_name, ${stackIndexSql}, r.score AS my_score
+		`SELECT p.*, r.score AS my_score
 		 FROM paintings p LEFT JOIN ratings r ON r.painting_id = p.id AND r.admin = ?
-		 LEFT JOIN stacks s ON s.id = p.stack_id
 		 WHERE p.deleted_at IS NULL AND p.variants_version IS NOT NULL ORDER BY p.created_at`,
 	)
 		.bind(c.get('user').name)
