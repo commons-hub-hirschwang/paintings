@@ -3,7 +3,7 @@
 import exifReader from 'exif-reader'
 import sharp from 'sharp'
 import type { Camera } from '../shared/geometry'
-import { lensFor, type Lens } from './lens'
+import { lensOf } from './lens'
 
 // sensor width (long side, mm) and crop factor of known cameras: exact focal length in pixels from the real focal length
 const sensors: Record<string, { widthMm: number; crop: number }> = { 'ILCE-6400': { widthMm: 23.5, crop: 1.534 } }
@@ -49,7 +49,3 @@ export async function exposureOf(file: string): Promise<Exposure | null> {
 		return null
 	}
 }
-
-// the lens correction of a photo, null when its lens has no profile
-export const lensOf = ({ lens, width, height }: Camera): Lens | null =>
-	lens && lens.cameraCrop ? lensFor(lens.model, lens.focalMm, width, height, lens.cameraCrop) : null

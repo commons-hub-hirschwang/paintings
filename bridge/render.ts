@@ -5,12 +5,13 @@ import { basename, join } from 'node:path'
 import sharp from 'sharp'
 import { rectifiedSize, type Quad } from '../shared/geometry'
 import { archive as archiveSettings, webVariants } from '../shared/image-variants'
-import { cameraOf, lensOf } from './camera'
+import { cameraOf } from './camera'
+import { lensOf } from './lens'
 import { applyGains } from './color'
 import { measureBows } from './detect'
-import { listGroups, projectPath } from './project'
+import { listStacks, projectPath } from './project'
 import { correctLens, warpToRectangle } from './warp'
-import { listPaintings, nextNumber, readPainting, savePainting, writePainting, type LocalPainting } from './store'
+import { listPaintings, nextStackOrder, readPainting, savePainting, writePainting, type LocalPainting } from './store'
 
 // raw: the camera's photos (untouched); corrected: lens-corrected copies, in which corners are picked
 export const dirs = { get raw() { return projectPath('raw') }, get corrected() { return projectPath('corrected') } }
@@ -27,7 +28,7 @@ export async function correctedPhoto(file: string) {
 	const path = join(dirs.corrected, `${basename(file)}.jpg`)
 	if (!existsSync(path)) {
 		await ensureDirs()
-		await writeFile(path, await correctLens(raw, lens))
+		await writeFile(path, await correctLens(raw, camera))
 	}
 	return { path, camera, raw }
 }
@@ -57,12 +58,53 @@ type Size = { widthCm: number; heightCm: number }
 export async function renderImages(photo: Photo, quad: Quad, size: Size, gains?: [number, number, number]) {
 	const { width, height } = rectifiedSize(quad, size.widthCm, size.heightCm)
 	const bows = (await measureBows(photo.path, quad)).map((side) => side.bowPx)
-	const archive = await warpToRectangle(photo.raw, quad, width, height, lensOf(photo.camera), bows, gains ? (data) => applyGains(data, gains) : undefined)
+	const archive = await warpToRectangle(photo.raw, quad, width, height, photo.camera, bows, gains ? (data) => applyGains(data, gains) : undefined)
 	const original = await cropOriginal(photo.path, quad)
 	const { maxSize, quality } = webVariants.thumb
 	const thumb = await sharp(archive).resize({ width: maxSize, height: maxSize, fit: 'inside' }).jpeg({ quality }).toBuffer()
 	return { archive, thumb, original }
 }
+
+// A saved painting's images are made in the background, one painting at a time and in the order they were saved, so the
+// next photo can be taken right away. painting.json comes first (with `rendering`): the number is taken, and nothing is
+// lost if the bridge stops; the next start carries on. Failed: says so in the list, tried again on the next start.
+let renders = Promise.resolve()
+const queued = new Set<string>()
+
+async function renderInBackground(id: string) {
+	const painting = await readPainting(id)
+	if (!painting?.rendering) return
+	const { rendering, ...finished } = painting
+	try {
+		const photo = await correctedPhoto(rendering.photo)
+		if (!photo) throw new Error(`photo "${rendering.photo}" is no longer there`)
+		const { archive, thumb, original } = await renderImages(photo, rendering.quad, rendering.size, painting.color?.gains)
+		await savePainting({ ...finished, original: { photo: rendering.photo, crop: original.crop, quad: original.quad } }, { archive, thumb, original: original.jpeg })
+	} catch (error) {
+		console.error(error)
+		await writePainting({ ...painting, rendering: { ...rendering, error: (error as Error).message } })
+	}
+}
+
+export function queueRender(id: string) {
+	if (queued.has(id)) return
+	queued.add(id)
+	renders = renders.then(() => renderInBackground(id).catch(console.error)).finally(() => queued.delete(id))
+}
+
+// paintings left unfinished by the last run, or that failed
+export async function resumeRenders() {
+	for (const painting of (await listPaintings()).filter((p) => p.rendering).reverse()) {
+		if (painting.rendering!.error) {
+			const { error: _, ...rendering } = painting.rendering!
+			await writePainting({ ...painting, rendering })
+		}
+		queueRender(painting.id)
+	}
+}
+
+// before anything that needs all paintings finished; before changing projects, as paths follow the current project
+export const rendersDone = () => renders
 
 export const roundCm = (cm: number) => Math.round(cm * 10) / 10
 
@@ -78,24 +120,24 @@ export async function paintingSource(id: string) {
 	return { file: painting.original.photo, camera: photo.camera, quad: cornersOf(painting.original) }
 }
 
-export type PaintingChange = Size & { quad: Quad; groupId: string; material?: string; title?: string }
+export type PaintingChange = Size & { quad: Quad; stackId: string; material?: string; title?: string }
 
 // Change a saved painting. Its colour stays the one it was photographed with, and a size entered here doesn't touch
-// the distance calibration. Moved to another group: the next free number there; the old number stays a gap, as numbers
-// identify paintings in their physical stacks. New pixels (corners, turn, size): rendered again from the photo, and
+// the distance calibration. Moved to another stack: to its end. New pixels (corners, turn, size): rendered again from the photo, and
 // uploaded again by the next sync.
 export async function changePainting(id: string, change: PaintingChange) {
 	const painting = await readPainting(id)
+	if (painting?.rendering) throw new Error('this painting is still being rendered')
 	if (!painting?.original) throw new Error('this painting was saved without its photo data')
-	if (!listGroups().some((g) => g.id === change.groupId)) throw new Error(`unknown group "${change.groupId}"`)
+	if (!listStacks().some((s) => s.id === change.stackId)) throw new Error(`unknown stack "${change.stackId}"`)
 	const { widthCm, heightCm } = { widthCm: roundCm(change.widthCm), heightCm: roundCm(change.heightCm) }
 	const { material: _, ...rest } = painting
 	const material = change.material?.trim()
 	const changed: LocalPainting = {
 		...rest,
 		title: change.title ?? painting.title,
-		groupId: change.groupId,
-		number: change.groupId === painting.groupId ? painting.number : nextNumber(await listPaintings(), change.groupId),
+		stackId: change.stackId,
+		stackOrder: change.stackId === painting.stackId ? painting.stackOrder : nextStackOrder(await listPaintings(), change.stackId),
 		...(material ? { material } : {}),
 		widthCm,
 		heightCm,

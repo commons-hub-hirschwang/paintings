@@ -16,19 +16,23 @@ capture.get('/paintings', async (c) => {
 	return c.json(results)
 })
 
-// current group names, shown in the capture tool: { "<id>": "Keller" }
-capture.get('/groups', async (c) => {
-	const { results } = await c.env.DB.prepare(`SELECT id, name FROM painting_groups`).all<{ id: string; name: string }>()
-	return c.json(Object.fromEntries(results.map((g) => [g.id, g.name])))
+// what only the gallery knows, for the capture tool: current stack names ({ "<id>": "Keller" }) and the paintings that no
+// longer count in a stack
+capture.get('/stacks', async (c) => {
+	const [stacks, out] = await c.env.DB.batch<{ id: string; name: string }>([
+		c.env.DB.prepare(`SELECT id, name FROM stacks`),
+		c.env.DB.prepare(`SELECT id FROM paintings WHERE taken_out_at IS NOT NULL OR deleted_at IS NOT NULL`),
+	])
+	return c.json({ names: Object.fromEntries(stacks!.results.map((s) => [s.id, s.name])), out: out!.results.map((p) => p.id) })
 })
 
-// groups created on the laptop. Like titles, the name only counts on first upload: after that /admin owns it
-capture.put('/groups', async (c) => {
-	const groups = await c.req.json<{ id: string; name: string }[]>()
-	if (!Array.isArray(groups) || groups.some((g) => !g.id || !g.name)) return c.json({ error: 'invalid groups' }, 400)
-	if (groups.length)
+// stacks created on the laptop. Like titles, the name only counts on first upload: after that /admin owns it
+capture.put('/stacks', async (c) => {
+	const stacks = await c.req.json<{ id: string; name: string }[]>()
+	if (!Array.isArray(stacks) || stacks.some((s) => !s.id || !s.name)) return c.json({ error: 'invalid stacks' }, 400)
+	if (stacks.length)
 		await c.env.DB.batch(
-			groups.map((g) => c.env.DB.prepare(`INSERT INTO painting_groups (id, name) VALUES (?, ?) ON CONFLICT (id) DO NOTHING`).bind(g.id, g.name)),
+			stacks.map((s) => c.env.DB.prepare(`INSERT INTO stacks (id, name) VALUES (?, ?) ON CONFLICT (id) DO NOTHING`).bind(s.id, s.name)),
 		)
 	return c.json({ ok: true })
 })
@@ -41,15 +45,15 @@ capture.post('/paintings', async (c) => {
 		title?: string
 		width_cm?: number
 		height_cm?: number
-		group_id?: string
-		number?: number
+		stack_id?: string
+		stack_order?: number
 		material?: string
 	}>()
 	if (!body.id) return c.json({ error: 'id required' }, 400)
 	await c.env.DB.prepare(
-		`INSERT INTO paintings (id, title, width_cm, height_cm, group_id, number, material) VALUES (?, ?, ?, ?, ?, ?, ?)
+		`INSERT INTO paintings (id, title, width_cm, height_cm, stack_id, stack_order, material) VALUES (?, ?, ?, ?, ?, ?, ?)
 		 ON CONFLICT (id) DO UPDATE SET width_cm = excluded.width_cm, height_cm = excluded.height_cm,
-			group_id = excluded.group_id, number = excluded.number,
+			stack_id = excluded.stack_id, stack_order = excluded.stack_order,
 			material = COALESCE(excluded.material, paintings.material)`,
 	)
 		.bind(
@@ -57,8 +61,8 @@ capture.post('/paintings', async (c) => {
 			body.title ?? '',
 			body.width_cm ?? null,
 			body.height_cm ?? null,
-			body.group_id ?? null,
-			body.number ?? null,
+			body.stack_id ?? null,
+			body.stack_order ?? null,
 			body.material || null,
 		)
 		.run()

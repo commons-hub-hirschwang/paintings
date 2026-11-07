@@ -4,16 +4,17 @@ import { defaultPriceFormula, priceExamples, priceFunction } from '../../shared/
 import { paintingStatuses, type AdminPainting, type Painting, type UploadKey } from '../../shared/types'
 import { requireRole, sha256, type Env } from '../auth'
 import { getPriceFormula, getPriceFunction } from '../settings'
+import { stackIndexSql } from '../stacks'
 
 const admin = new Hono<Env>()
 admin.use(requireRole('admin'))
 
 admin.get('/paintings', async (c) => {
 	const { results } = await c.env.DB.prepare(
-		`SELECT p.*, g.name AS group_name, AVG(r.score) AS rating, COUNT(r.score) AS ratings
+		`SELECT p.*, s.name AS stack_name, ${stackIndexSql}, AVG(r.score) AS rating, COUNT(r.score) AS ratings
 		 FROM paintings p LEFT JOIN ratings r ON r.painting_id = p.id
-		 LEFT JOIN painting_groups g ON g.id = p.group_id
-		 GROUP BY p.id ORDER BY g.name, p.number, p.created_at`,
+		 LEFT JOIN stacks s ON s.id = p.stack_id
+		 GROUP BY p.id ORDER BY s.name, p.stack_order, p.created_at`,
 	).all<AdminPainting>()
 	const price = await getPriceFunction(c.env.DB)
 	return c.json(results.map((p) => ({ ...p, price: price(p.width_cm, p.height_cm, p.rating) })))
@@ -59,6 +60,16 @@ admin.put('/paintings/deleted', async (c) => {
 	return c.json({ ok: true })
 })
 
+// taken out of / put back into the physical stack: the paintings after it move up / back down by themselves.
+// Separate from the status: a sold painting stays in the stack, and has to be found there, until someone gets it.
+admin.put('/paintings/taken-out', async (c) => {
+	const { ids, out } = await c.req.json<{ ids: string[]; out: boolean }>()
+	if (!Array.isArray(ids) || !ids.length) return c.json({ error: 'no paintings selected' }, 400)
+	const takenOutAt = out ? 'unixepoch()' : 'NULL'
+	await c.env.DB.batch(ids.map((id) => c.env.DB.prepare(`UPDATE paintings SET taken_out_at = ${takenOutAt} WHERE id = ?`).bind(id)))
+	return c.json({ ok: true })
+})
+
 admin.patch('/paintings/:id', async (c) => {
 	const body = await c.req.json<Partial<Pick<Painting, 'title' | 'width_cm' | 'height_cm' | 'status'>>>()
 	if (body.status && !paintingStatuses.includes(body.status)) return c.json({ error: 'invalid status' }, 400)
@@ -71,14 +82,14 @@ admin.patch('/paintings/:id', async (c) => {
 })
 
 // stacks are found by their name, so it has to be unambiguous
-admin.put('/groups/:id', async (c) => {
+admin.put('/stacks/:id', async (c) => {
 	const { name: input } = await c.req.json<{ name: string }>()
 	const name = typeof input === 'string' ? input.trim() : ''
 	if (!name || name.length > 100) return c.json({ error: 'invalid name' }, 400)
 	const id = c.req.param('id')
-	const taken = await c.env.DB.prepare(`SELECT 1 FROM painting_groups WHERE name = ? AND id != ?`).bind(name, id).first()
+	const taken = await c.env.DB.prepare(`SELECT 1 FROM stacks WHERE name = ? AND id != ?`).bind(name, id).first()
 	if (taken) return c.json({ error: `there already is a stack called "${name}"` }, 400)
-	const { meta } = await c.env.DB.prepare(`UPDATE painting_groups SET name = ?, updated_by = ?, updated_at = unixepoch() WHERE id = ?`)
+	const { meta } = await c.env.DB.prepare(`UPDATE stacks SET name = ?, updated_by = ?, updated_at = unixepoch() WHERE id = ?`)
 		.bind(name, c.get('user').name, id)
 		.run()
 	return meta.changes ? c.json({ ok: true }) : c.notFound()

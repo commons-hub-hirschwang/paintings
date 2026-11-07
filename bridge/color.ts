@@ -55,9 +55,9 @@ const fromLinear = (v: number) => 255 * (v <= 0.0031308 ? 12.92 * v : 1.055 * v 
 const luminance = (r: number, g: number, b: number) => 0.2126 * r + 0.7152 * g + 0.0722 * b
 
 // white balance gains in linear light, through a lookup table per channel: black stays black
+const gainTable = (gain: number) => Uint8Array.from({ length: 256 }, (_, v) => Math.min(255, Math.round(fromLinear(toLinear(v) * gain))))
 export function applyGains(data: Buffer, gains: Gains) {
-	const tables = gains.map((gain) => Uint8Array.from({ length: 256 }, (_, v) => Math.min(255, Math.round(fromLinear(toLinear(v) * gain)))))
-	const [r, g, b] = tables as [Uint8Array, Uint8Array, Uint8Array]
+	const [r, g, b] = gains.map(gainTable) as [Uint8Array, Uint8Array, Uint8Array]
 	for (let i = 0; i < data.length; i += 3) {
 		data[i] = r[data[i]!]!
 		data[i + 1] = g[data[i + 1]!]!
@@ -66,13 +66,35 @@ export function applyGains(data: Buffer, gains: Gains) {
 	return data
 }
 
+const CLIPPED = 254
+
+// share of the box's pixels that are (with the gains applied: would be) clipped in any channel
+export function clippedShare(image: { data: Buffer; width: number; height: number }, box: Box, gains?: Gains) {
+	const [tr, tg, tb] = (gains ?? [1, 1, 1]).map((gain) => {
+		const first = gains ? gainTable(gain).findIndex((value) => value >= CLIPPED) : CLIPPED
+		return first < 0 ? 256 : first
+	}) as [number, number, number]
+	const { data, width } = image
+	const { left, top, right, bottom } = bounds(image, box)
+	let clipped = 0
+	for (let y = top; y < bottom; y++) {
+		const end = (y * width + right) * 3
+		for (let i = (y * width + left) * 3; i < end; i += 3) if (data[i]! >= tr || data[i + 1]! >= tg || data[i + 2]! >= tb) clipped++
+	}
+	return clipped / Math.max(1, (right - left) * (bottom - top))
+}
+
+const bounds = (image: { width: number; height: number }, box: Box) => ({
+	left: Math.max(0, Math.round(box.left)),
+	top: Math.max(0, Math.round(box.top)),
+	right: Math.min(image.width, Math.round(box.left + box.width)),
+	bottom: Math.min(image.height, Math.round(box.top + box.height)),
+})
+
 // medians per channel are robust against specks; the spread tells whether the area is really one colour
 export function measure(image: { data: Buffer; width: number; height: number }, box: Box) {
 	const histograms = [new Uint32Array(256), new Uint32Array(256), new Uint32Array(256)] as const
-	const left = Math.max(0, Math.round(box.left))
-	const top = Math.max(0, Math.round(box.top))
-	const right = Math.min(image.width, Math.round(box.left + box.width))
-	const bottom = Math.min(image.height, Math.round(box.top + box.height))
+	const { left, top, right, bottom } = bounds(image, box)
 	let clipped = 0
 	for (let y = top; y < bottom; y++) {
 		for (let x = left; x < right; x++) {
@@ -83,7 +105,7 @@ export function measure(image: { data: Buffer; width: number; height: number }, 
 			histograms[0][r]!++
 			histograms[1][g]!++
 			histograms[2][b]!++
-			if (r >= 254 || g >= 254 || b >= 254) clipped++
+			if (r >= CLIPPED || g >= CLIPPED || b >= CLIPPED) clipped++
 		}
 	}
 	const count = Math.max(1, (right - left) * (bottom - top))

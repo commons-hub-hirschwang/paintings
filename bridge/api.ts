@@ -46,12 +46,13 @@ export const json = (body: unknown): RequestInit => ({
 	headers: { 'content-type': 'application/json' },
 })
 
-// current group names from the gallery, by id; none if it can't be reached (the last known names stay)
-export const fetchGroupNames = async (): Promise<Record<string, string>> => {
+// what the gallery knows about stacks: names by id, paintings no longer in one. Null if it can't be reached (the last
+// known state stays)
+export const fetchStacks = async () => {
 	try {
-		return (await (await api('/groups')).json()) as Record<string, string>
+		return (await (await api('/stacks')).json()) as { names: Record<string, string>; out: string[] }
 	} catch {
-		return {}
+		return null
 	}
 }
 

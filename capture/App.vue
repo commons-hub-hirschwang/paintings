@@ -18,7 +18,7 @@ const warnings = ref<string[]>([])
 const photo = ref<string | null>(null)
 // the saved painting brought up in the editor (null: a new photo). What a capture series keeps is restored afterwards.
 const editing = ref<LocalPainting | null>(null)
-let beforeEditing: { turns: number; group: string; material: string } | null = null
+let beforeEditing: { turns: number; stack: string; material: string } | null = null
 // corners in the painting's orientation: TL is the painting's top left, also when photographed sideways
 const quad = ref<Quad | null>(null)
 // view turned clockwise in quarter turns; kept for the next photos (a series photographed the same way)
@@ -54,8 +54,8 @@ const camera = ref<Camera | null>(null)
 let photoSize = { width: 0, height: 0 }
 let lastQuad: { quad: Quad; turns: number; width: number; height: number } | null = null
 const title = ref('')
-const group = ref('')
-const NEW_GROUP = '\u0000new'
+const stack = ref('')
+const NEW_STACK = '\u0000new'
 // material: stays as chosen for the next paintings; the list: all materials used in this project
 const material = ref('')
 const NEW_MATERIAL = '\u0000new-material'
@@ -83,6 +83,19 @@ const saveSettings = () =>
 	})
 const paintings = ref<LocalPainting[]>([])
 
+async function refreshPaintings() {
+	paintings.value = await bridge.paintings()
+	if (status.value) status.value.unsynced = paintings.value.filter((p) => !p.isSynced).length
+}
+// paintings are finished in the background: followed until they are
+const rendering = computed(() => paintings.value.some((p) => p.rendering && !p.rendering.error))
+let renderPoll: ReturnType<typeof setInterval>
+watch(rendering, (active) => {
+	clearInterval(renderPoll)
+	if (active) renderPoll = setInterval(() => refreshPaintings().catch(() => {}), 1000)
+})
+onBeforeUnmount(() => clearInterval(renderPoll))
+
 // settings form shows the current project's sync target
 watch(
 	() => [status.value?.project, status.value?.galleryUrl],
@@ -106,8 +119,8 @@ const refreshStatus = () =>
 	run('Connecting to bridge…', async () => {
 		status.value = await bridge.status()
 		paintings.value = status.value.project ? await bridge.paintings() : []
-		// keep the chosen group; default: group of the last capture
-		if (!status.value.groups?.some((g) => g.id === group.value)) group.value = paintings.value[0]?.groupId ?? status.value.groups?.[0]?.id ?? ''
+		// keep the chosen stack; default: stack of the last capture
+		if (!status.value.stacks?.some((s) => s.id === stack.value)) stack.value = paintings.value[0]?.stackId ?? status.value.stacks?.[0]?.id ?? ''
 		if (!material.value) material.value = paintings.value[0]?.material ?? ''
 		askReuse.value = !!status.value.calibration && sessionStorage.getItem(confirmedKey()) !== 'yes'
 		askColorReuse.value = !!status.value.color && sessionStorage.getItem(colorConfirmedKey()) !== 'yes'
@@ -143,22 +156,24 @@ const openProject = (name: string, create = false) =>
 		await refreshStatus()
 	})
 
-// "New group…" in the select asks for a name, creates the group and selects it
-function chooseGroup(select: HTMLSelectElement) {
-	if (select.value !== NEW_GROUP) return (group.value = select.value)
-	const name = prompt('Name of the new group')?.trim()
-	select.value = group.value
+// "New stack…" in the select asks for a name, creates the stack and selects it
+function chooseStack(select: HTMLSelectElement) {
+	if (select.value !== NEW_STACK) return (stack.value = select.value)
+	const name = prompt('Name of the new stack')?.trim()
+	select.value = stack.value
 	if (!name) return
-	run('Creating group…', async () => {
-		const { id } = await bridge.addGroup(name)
+	run('Creating stack…', async () => {
+		const { id } = await bridge.addStack(name)
 		status.value = await bridge.status()
-		group.value = id
+		stack.value = id
 	})
 }
-const nextNumber = computed(() =>
-	editing.value?.groupId === group.value ? editing.value.number : Math.max(-1, ...paintings.value.filter((p) => p.groupId === group.value).map((p) => p.number)) + 1,
+// where the painting in the editor is, or will be, in the chosen stack: new ones go on its end
+const stackIndex = computed(() =>
+	editing.value?.stackId === stack.value ? editing.value.stackIndex : paintings.value.filter((p) => p.stackId === stack.value && p.stackIndex !== null).length,
 )
-const label = (p: { groupId: string; number: number }) => `${status.value?.groups?.find((g) => g.id === p.groupId)?.name ?? '?'} #${p.number}`
+const stackName = (id: string) => status.value?.stacks?.find((s) => s.id === id)?.name ?? '?'
+const label = (p: { stackId: string; stackIndex: number | null }) => `${stackName(p.stackId)} ${p.stackIndex === null ? '(taken out)' : `#${p.stackIndex}`}`
 
 const calibration = computed(() => status.value?.calibration ?? null)
 const color = computed(() => status.value?.color ?? null)
@@ -174,7 +189,21 @@ const estimate = computed(() =>
 const shape = computed(() => (quad.value && camera.value ? reconstruct(quad.value, camera.value) : null))
 const canSave = computed(() => !!photo.value && !!quad.value && !busy.value && (measured.value || !!calibration.value))
 
-const capture = () => run('Capturing…', async () => setPhoto(await bridge.capture()))
+const canCapture = computed(() => !busy.value && !!status.value?.cameras.length && !!color.value)
+const capture = () => {
+	window.scrollTo({ top: 0 })
+	return run('Capturing…', async () => setPhoto(await bridge.capture()))
+}
+
+// after saving a painting: on to the next one, or a pause. Enter or Space goes on, Esc stops
+const savedAs = ref('')
+const nextButton = ref<HTMLButtonElement>()
+watch(nextButton, (button) => button?.focus())
+const stop = () => (savedAs.value = '')
+function captureNext() {
+	stop()
+	capture()
+}
 
 function upload(event: Event) {
 	const file = (event.target as HTMLInputElement).files?.[0]
@@ -233,7 +262,7 @@ function onPhotoLoaded({ width, height }: { width: number; height: number }) {
 const openPainting = (painting: LocalPainting) =>
 	run('Opening…', async () => {
 		const { file, camera: photoCamera, quad: corners } = await bridge.paintingSource(painting.id)
-		beforeEditing ??= { turns: turns.value, group: group.value, material: material.value }
+		beforeEditing ??= { turns: turns.value, stack: stack.value, material: material.value }
 		editing.value = painting
 		detection.value = null
 		warnings.value = []
@@ -244,7 +273,7 @@ const openPainting = (painting: LocalPainting) =>
 		const sums = corners.map((p) => p.x + p.y)
 		turns.value = sums.indexOf(Math.min(...sums))
 		title.value = painting.title
-		group.value = painting.groupId
+		stack.value = painting.stackId
 		material.value = painting.material ?? ''
 		typingMaterial.value = false
 		widthCm.value = painting.widthCm
@@ -261,7 +290,7 @@ function closeEditor() {
 	typingMaterial.value = false
 	widthCm.value = heightCm.value = ''
 	turns.value = beforeEditing!.turns
-	group.value = beforeEditing!.group
+	stack.value = beforeEditing!.stack
 	material.value = beforeEditing!.material
 	beforeEditing = null
 }
@@ -271,7 +300,7 @@ const saveChanges = () =>
 		const { id, isSynced, title: savedTitle } = editing.value!
 		const changed = await bridge.changePainting(id, {
 			quad: quad.value!,
-			groupId: group.value,
+			stackId: stack.value,
 			material: material.value.trim(),
 			title: isSynced ? savedTitle : title.value.trim(),
 			widthCm: Number(widthCm.value),
@@ -283,25 +312,28 @@ const saveChanges = () =>
 		notice.value = `Saved as ${label(changed)}.${isSynced ? ' Press Sync to update the website.' : ''}`
 	})
 
+// answers right away: the images are made in the background, the next photo can be taken
 const save = () =>
-	run('Rectifying…', async () => {
-		await bridge.process({
+	run('Saving…', async () => {
+		const { painting, calibration: saved } = await bridge.process({
 			file: photo.value!,
 			quad: quad.value!,
 			title: title.value.trim(),
-			groupId: group.value,
+			stackId: stack.value,
 			material: material.value.trim(),
 			...(measured.value ? { widthCm: Number(widthCm.value), heightCm: Number(heightCm.value) } : {}),
 		})
 		lastQuad = { quad: quad.value!, turns: turns.value, ...photoSize }
 		if (measured.value) sessionStorage.setItem(confirmedKey(), 'yes')
-		status.value = await bridge.status()
-		paintings.value = await bridge.paintings()
+		status.value!.calibration = saved
+		await refreshPaintings()
 		photo.value = null
 		quad.value = null
 		title.value = ''
 		typingMaterial.value = false
 		widthCm.value = heightCm.value = ''
+		window.scrollTo({ top: 0 })
+		savedAs.value = label(painting)
 	})
 
 const sync = () =>
@@ -325,7 +357,7 @@ const cm = (value: number) => value.toFixed(1)
 				<option v-for="project in status.projects" :key="project">{{ project }}</option>
 			</select>
 			<form class="actions" @submit.prevent="openProject(newProject, true)">
-				<input v-model="newProject" placeholder="New project, e.g. attic" required />
+				<input v-model="newProject" placeholder="New project, e.s. attic" required />
 				<button type="submit">Create</button>
 			</form>
 			</div>
@@ -386,7 +418,7 @@ const cm = (value: number) => value.toFixed(1)
 			</template>
 
 			<section v-if="!photo" class="actions">
-				<button :disabled="!!busy || !status.cameras.length || !color" @click="capture">Capture with camera</button>
+				<button :disabled="!canCapture" @click="capture">Capture with camera</button>
 				<label class="button">
 					Upload photo
 					<input type="file" accept="image/jpeg" hidden @change="upload" />
@@ -420,13 +452,13 @@ const cm = (value: number) => value.toFixed(1)
 					</div>
 					<div class="fields">
 						<label>
-							Group
-							<select :value="group" @change="chooseGroup($event.target as HTMLSelectElement)">
-								<option v-for="g in status.groups" :key="g.id" :value="g.id">{{ g.name }}</option>
-								<option :value="NEW_GROUP">New group…</option>
+							Stack
+							<select :value="stack" @change="chooseStack($event.target as HTMLSelectElement)">
+								<option v-for="s in status.stacks" :key="s.id" :value="s.id">{{ s.name }}</option>
+								<option :value="NEW_STACK">New stack…</option>
 							</select>
 						</label>
-						<span class="number">#{{ nextNumber }}</span>
+						<span class="stack-index">{{ stackIndex === null ? 'taken out' : `#${stackIndex}` }}</span>
 						<label class="grow">
 							Name
 							<input v-model="title" placeholder="Untitled" :disabled="editing?.isSynced" autofocus />
@@ -441,7 +473,7 @@ const cm = (value: number) => value.toFixed(1)
 						</label>
 						<label v-if="typingMaterial" class="grow">
 							New material
-							<input v-model="material" placeholder="e.g. Öl auf Leinwand" autofocus />
+							<input v-model="material" placeholder="e.s. Öl auf Leinwand" autofocus />
 						</label>
 					</div>
 					<div v-if="!editing" class="notes">
@@ -475,6 +507,14 @@ const cm = (value: number) => value.toFixed(1)
 				</form>
 			</section>
 
+			<section v-if="savedAs" class="next" @keydown.esc="stop">
+				<p>Saved as {{ savedAs }}</p>
+				<div>
+					<button type="button" @click="stop">Stop</button>
+					<button ref="nextButton" type="button" :disabled="!canCapture" @click="captureNext">Capture next</button>
+				</div>
+			</section>
+
 			<fieldset v-if="paintings.length" class="saved">
 				<legend>Captured ({{ paintings.length }})</legend>
 				<button
@@ -483,10 +523,11 @@ const cm = (value: number) => value.toFixed(1)
 					type="button"
 					:class="{ current: editing?.id === painting.id }"
 					:disabled="!!busy || !painting.original || (!!photo && !editing)"
-					:title="painting.original ? 'Change this painting' : 'Saved without its photo data: cannot be changed'"
+					:title="painting.rendering ? 'Being finished' : painting.original ? 'Change this painting' : 'Saved without its photo data: cannot be changed'"
 					@click="openPainting(painting)"
 				>
-					<img :src="bridge.thumbUrl(painting)" :alt="painting.title" />
+					<span v-if="painting.rendering" class="pending muted">{{ painting.rendering.error ? 'Failed' : 'Rendering…' }}</span>
+					<img v-else :src="bridge.thumbUrl(painting)" :alt="painting.title" />
 					<span class="caption">
 						<span><strong>{{ label(painting) }}</strong> {{ painting.title || 'Untitled' }}</span>
 						<span class="muted">
@@ -494,6 +535,7 @@ const cm = (value: number) => value.toFixed(1)
 							<template v-if="painting.material">{{ painting.material }} · </template>
 							{{ painting.isSynced ? 'synced' : 'not synced' }}
 						</span>
+						<span v-if="painting.rendering?.error" class="error">{{ painting.rendering.error }} (tried again when the capture tool restarts)</span>
 					</span>
 				</button>
 			</fieldset>
@@ -570,6 +612,32 @@ const cm = (value: number) => value.toFixed(1)
 		}
 	}
 
+	& .next {
+		position: fixed;
+		inset: 0;
+		z-index: 1;
+		display: flex;
+		flex-direction: column;
+		justify-content: center;
+		gap: var(--gap);
+		padding: var(--gap);
+		background: rgba(0, 0, 0, 0.8);
+		color: #fff;
+		font-size: 2rem;
+		text-align: center;
+
+		& div {
+			flex: 0 1 60vh;
+			display: flex;
+			gap: var(--gap);
+		}
+
+		& button {
+			flex: 1;
+			font-size: 3rem;
+		}
+	}
+
 	& .patch {
 		display: block;
 		max-width: 12rem;
@@ -620,7 +688,7 @@ const cm = (value: number) => value.toFixed(1)
 		}
 	}
 
-	& .number {
+	& .stack-index {
 		line-height: 2.4rem;
 		font-weight: bold;
 	}
@@ -655,10 +723,16 @@ const cm = (value: number) => value.toFixed(1)
 			}
 		}
 
-		& img {
+		& img,
+		& .pending {
 			width: 100%;
 			aspect-ratio: 1;
 			object-fit: contain;
+		}
+
+		& .pending {
+			display: grid;
+			place-items: center;
 		}
 
 		& .caption {

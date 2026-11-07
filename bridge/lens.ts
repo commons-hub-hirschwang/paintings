@@ -5,7 +5,7 @@
 // photo gets corrected twice. Add a lens: copy `<distortion model="ptlens" …>` lines from
 // /usr/share/lensfun/version_1/*.xml (or github.com/lensfun/lensfun data/db), key = EXIF LensModel.
 // Matches liblensfun 0.3.4 (ApplyGeometryDistortion) to < 0.02 px.
-import type { Point } from '../shared/geometry'
+import type { Camera, Point } from '../shared/geometry'
 
 type Profile = {
 	cropFactor: number // of the calibration camera
@@ -104,3 +104,7 @@ export function lensFor(model: string | undefined, focalMm: number | undefined, 
 		},
 	}
 }
+
+// the lens correction of a photo, null when its lens has no profile
+export const lensOf = ({ lens, width, height }: Camera): Lens | null =>
+	lens && lens.cameraCrop ? lensFor(lens.model, lens.focalMm, width, height, lens.cameraCrop) : null

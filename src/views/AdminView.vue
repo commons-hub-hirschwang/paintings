@@ -64,23 +64,24 @@ const rename = (painting: AdminPainting, title: string) =>
 const setStatus = (painting: AdminPainting, status: PaintingStatus) =>
 	act(() => authed(`/api/admin/paintings/${painting.id}`, { method: 'PATCH', body: JSON.stringify({ status }) }))
 
-const renameGroup = (id: string, name: string) =>
-	act(() => authed(`/api/admin/groups/${id}`, { method: 'PUT', body: JSON.stringify({ name }) }))
+const renameStack = (id: string, name: string) =>
+	act(() => authed(`/api/admin/stacks/${id}`, { method: 'PUT', body: JSON.stringify({ name }) }))
 
 // filters (null = all); deleted paintings only show up when filtering for them
-const groupFilter = ref<string | null>(null)
-const numberFilter = ref('')
-const statusFilter = ref<PaintingStatus | 'deleted' | null>(null)
-// [id, name]; id '' = paintings without a group
-const groups = computed(() => [...new Map(paintings.value.map((p) => [p.group_id ?? '', p.group_name ?? '']))])
+const stackFilter = ref<string | null>(null)
+const indexFilter = ref('')
+const statusFilter = ref<PaintingStatus | 'deleted' | 'taken out' | null>(null)
+// [id, name]; id '' = paintings without a stack
+const stacks = computed(() => [...new Map(paintings.value.map((p) => [p.stack_id ?? '', p.stack_name ?? '']))])
 const visible = computed(() =>
 	paintings.value.filter(
 		(p) =>
-			(groupFilter.value === null || (p.group_id ?? '') === groupFilter.value) &&
-			(numberFilter.value === '' || String(p.number) === numberFilter.value) &&
+			(stackFilter.value === null || (p.stack_id ?? '') === stackFilter.value) &&
+			(indexFilter.value === '' || String(p.stack_index) === indexFilter.value) &&
 			(statusFilter.value === 'deleted'
 				? p.deleted_at !== null
-				: p.deleted_at === null && (statusFilter.value === null || p.status === statusFilter.value)),
+				: p.deleted_at === null &&
+					(statusFilter.value === 'taken out' ? p.taken_out_at !== null : statusFilter.value === null || p.status === statusFilter.value)),
 	),
 )
 
@@ -105,6 +106,12 @@ const setSelectedDeleted = (deleted: boolean) =>
 		selected.value = new Set()
 	})
 
+const setSelectedTakenOut = (out: boolean) =>
+	act(async () => {
+		await authed('/api/admin/paintings/taken-out', { method: 'PUT', body: JSON.stringify({ ids: picked.value, out }) })
+		selected.value = new Set()
+	})
+
 const createKey = () =>
 	act(async () => {
 		newKey.value = await authed('/api/admin/keys', { method: 'POST', body: JSON.stringify({ name: keyName.value }) })
@@ -122,16 +129,16 @@ const date = (seconds: number | null) => (seconds ? new Date(seconds * 1000).toL
 		<LoginGate :roles="['admin']">
 			<p v-if="error" class="error">{{ error }}</p>
 
-			<section v-if="groups.some(([id]) => id)">
+			<section v-if="stacks.some(([id]) => id)">
 				<h2>Stacks</h2>
 				<p class="muted">Rename a stack here; the new name is used everywhere, including the capture tool.</p>
 				<div class="actions">
-					<template v-for="[id, name] in groups" :key="id">
+					<template v-for="[id, name] in stacks" :key="id">
 						<input
 							v-if="id"
 							:value="name"
 							aria-label="Stack name"
-							@change="renameGroup(id, ($event.target as HTMLInputElement).value)"
+							@change="renameStack(id, ($event.target as HTMLInputElement).value)"
 							@keydown.enter="($event.target as HTMLInputElement).blur()"
 						/>
 					</template>
@@ -143,20 +150,21 @@ const date = (seconds: number | null) => (seconds ? new Date(seconds * 1000).toL
 				<div class="actions bulk">
 					<label>
 						Stack
-						<select v-model="groupFilter">
+						<select v-model="stackFilter">
 							<option :value="null">all</option>
-							<option v-for="[id, name] in groups" :key="id" :value="id">{{ name || 'none' }}</option>
+							<option v-for="[id, name] in stacks" :key="id" :value="id">{{ name || 'none' }}</option>
 						</select>
 					</label>
 					<label>
-						Number
-						<input v-model.trim="numberFilter" type="search" inputmode="numeric" placeholder="all" />
+						Index
+						<input v-model.trim="indexFilter" type="search" inputmode="numeric" placeholder="all" />
 					</label>
 					<label>
 						Status
 						<select v-model="statusFilter">
 							<option :value="null">all</option>
 							<option v-for="status in paintingStatuses" :key="status" :value="status">{{ status }}</option>
+							<option value="taken out">taken out</option>
 							<option value="deleted">deleted</option>
 						</select>
 					</label>
@@ -169,6 +177,8 @@ const date = (seconds: number | null) => (seconds ? new Date(seconds * 1000).toL
 							<option v-for="status in paintingStatuses" :key="status">{{ status }}</option>
 						</select>
 					</label>
+					<button v-if="statusFilter === 'taken out'" @click="setSelectedTakenOut(false)">Put back into stack</button>
+					<button v-else-if="statusFilter !== 'deleted'" @click="setSelectedTakenOut(true)">Take out of stack</button>
 					<button v-if="statusFilter === 'deleted'" @click="setSelectedDeleted(false)">Restore</button>
 					<button v-else @click="setSelectedDeleted(true)">Delete</button>
 					<button @click="selected = new Set()">Clear selection</button>
@@ -177,7 +187,7 @@ const date = (seconds: number | null) => (seconds ? new Date(seconds * 1000).toL
 					<tr>
 						<th></th>
 						<th>Stack</th>
-						<th>Number</th>
+						<th>Index</th>
 						<th>Name</th>
 						<th>Size (cm)</th>
 						<th>Rating</th>
@@ -191,8 +201,8 @@ const date = (seconds: number | null) => (seconds ? new Date(seconds * 1000).toL
 						<td>
 							<img v-if="painting.variants_version" :src="imageUrl(painting, 'thumb')" :alt="painting.title" loading="lazy" />
 						</td>
-						<td>{{ painting.group_name }}</td>
-						<td>{{ painting.number }}</td>
+						<td>{{ painting.stack_name }}</td>
+						<td>{{ painting.taken_out_at ? 'taken out' : painting.stack_index }}</td>
 						<td>
 							<input
 								:value="painting.title"

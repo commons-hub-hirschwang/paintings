@@ -45,6 +45,14 @@ grabbed it: `pkill -f gvfs-gphoto2-volume-monitor`.
 5. Paintings are stored offline in `captures/projects/<name>/paintings/<id>/` (archive, thumb, metadata).
    Upload them with the **Sync** button or `pnpm sync` (to `GALLERY_URL` in `.env.local`; safe to rerun).
 
+## Stacks
+
+Paintings lie in physical stacks. "Keller #3" is a painting's **stack index**: its position in the stack, so it can be found.
+When a painting leaves (**Take out of stack** on `/admin`), the index of every painting after it goes down by one. **Put back
+into stack** returns it to its old place. Selling doesn't take a painting out: it stays findable until someone gets it.
+The index is counted rather than stored, from `stack_order` (set at capture, never changes, can have gaps) and what's still
+there, so the capture laptop and the gallery can't overwrite each other. Deleted paintings don't count.
+
 ## Images
 
 The **archive** (rectified, full resolution, JPEG q90) is the private master in R2 (plus the local copy in

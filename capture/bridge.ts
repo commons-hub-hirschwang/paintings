@@ -1,13 +1,13 @@
 // Client for the local capture bridge (pnpm bridge), reached via the Vite dev proxy.
 import type { Calibration, Camera, Quad } from '../shared/geometry'
 
-export type Group = { id: string; name: string }
+export type Stack = { id: string; name: string }
 export type BridgeStatus = {
 	cameras: string[]
 	project: string | null
 	projects: string[]
 	// below: only when a project is open
-	groups: Group[]
+	stacks: Stack[]
 	calibration: Calibration | null
 	color: ColorCalibration | null
 	galleryUrl: string
@@ -41,12 +41,13 @@ export type LocalPainting = {
 	createdAt: number
 	updatedAt?: number
 	isSynced: boolean
-	groupId: string
-	number: number
+	stackId: string
+	stackIndex: number | null // position in the physical stack; null: no longer in it
 	material?: string
 	original?: unknown // present: can be brought up again
+	rendering?: { error?: string } // saved, images still being made in the background
 }
-export type PaintingChange = { quad: Quad; groupId: string; material?: string; title?: string; widthCm: number; heightCm: number }
+export type PaintingChange = { quad: Quad; stackId: string; material?: string; title?: string; widthCm: number; heightCm: number }
 
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
 	const response = await fetch(`/bridge${path}`, init).catch(() => {
@@ -81,13 +82,13 @@ export const bridge = {
 		file: string
 		quad: Quad
 		title: string
-		groupId: string
+		stackId: string
 		material?: string
 		widthCm?: number
 		heightCm?: number
 	}) =>
-		call<LocalPainting>('/process', json(body)),
-	addGroup: (name: string) => call<Group>('/groups', json({ name })),
+		call<{ painting: LocalPainting; calibration: Calibration | null }>('/process', json(body)),
+	addStack: (name: string) => call<Stack>('/stacks', json({ name })),
 	paintings: () => call<LocalPainting[]>('/paintings'),
 	sync: () => call<{ synced: number; failed: { id: string; error: string }[] }>('/sync', { method: 'POST' }),
 	paintingSource: (id: string) => call<{ file: string; camera: Camera; quad: Quad }>(`/paintings/${id}/source`),

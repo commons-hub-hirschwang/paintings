@@ -20,11 +20,24 @@ const COARSE_SIZE = 1000 // long side of the Hough image
 const MIN_INLIERS = 0.6 // share of edge samples on the fitted curve, per side, for a trusted detection
 const MAX_ANGLE_ERROR = 1 // ° off square in 3D (shared/geometry.ts reconstruct), for a trusted detection
 
-async function grey(file: string | Buffer, longSide?: number, blur = 1.2): Promise<Grey> {
+async function grey(file: string, longSide?: number, blur = 1.2): Promise<Grey> {
 	let image = sharp(file).rotate()
 	if (longSide) image = image.resize({ width: longSide, height: longSide, fit: 'inside' })
 	const { data, info } = await image.greyscale().blur(blur).raw().toBuffer({ resolveWithObject: true })
-	return { data: Float32Array.from(data), width: info.width, height: info.height }
+	return { data: new Float32Array(data), width: info.width, height: info.height }
+}
+
+// The last photos' full-size grey images stay in memory: detection and the curves work on the same one, curves are
+// measured again after every corner change, and a painting rendered in the background needs its own photo's.
+const KEPT_PHOTOS = 3
+const kept = new Map<string, Promise<Grey>>()
+function fullGrey(file: string) {
+	const image = kept.get(file) ?? grey(file)
+	kept.delete(file)
+	kept.set(file, image)
+	image.catch(() => kept.delete(file))
+	if (kept.size > KEPT_PHOTOS) kept.delete(kept.keys().next().value!)
+	return image
 }
 
 function sample({ data, width, height }: Grey, x: number, y: number) {
@@ -67,7 +80,8 @@ function houghLines(image: Grey) {
 	const diagonal = Math.hypot(width, height)
 	const RHO_BINS = Math.ceil(diagonal) * 2
 	const votes = new Float32Array(ANGLES * RHO_BINS)
-	const magnitudes: number[] = []
+	const magnitudes = new Float64Array((width - 2) * (height - 2))
+	let measuredPixels = 0
 	const gradients: [number, number, number, number][] = []
 	for (let y = 1; y < height - 1; y++) {
 		for (let x = 1; x < width - 1; x++) {
@@ -77,11 +91,11 @@ function houghLines(image: Grey) {
 			const gy = d[i + width - 1]! + 2 * d[i + width]! + d[i + width + 1]! - d[i - width - 1]! - 2 * d[i - width]! - d[i - width + 1]!
 			const magnitude = Math.hypot(gx, gy)
 			if (magnitude > 40) gradients.push([x, y, gx, gy])
-			magnitudes.push(magnitude)
+			magnitudes[measuredPixels++] = magnitude
 		}
 	}
 	// strong edges only (top 8 %, but at least a clear step)
-	magnitudes.sort((a, b) => a - b)
+	magnitudes.sort()
 	const threshold = Math.max(60, magnitudes[Math.floor(magnitudes.length * 0.92)]!)
 	for (const [x, y, gx, gy] of gradients) {
 		const magnitude = Math.hypot(gx, gy)
@@ -101,7 +115,9 @@ function houghLines(image: Grey) {
 	}
 	// peaks: local maxima, strongest first, separated by ≥ 2 % of the image
 	const peaks: { line: Line; votes: number }[] = []
-	const order = [...votes.keys()].filter((i) => votes[i]! > 0).sort((a, b) => votes[b]! - votes[a]!)
+	const order: number[] = []
+	for (let i = 0; i < votes.length; i++) if (votes[i]! > 0) order.push(i)
+	order.sort((a, b) => votes[b]! - votes[a]!)
 	const minSeparation = 0.02 * Math.max(width, height)
 	for (const i of order) {
 		if (peaks.length >= 40) break
@@ -343,13 +359,12 @@ export function trusted(d: Detection, camera: Camera) {
 
 // corners of the painting in `file` (the lens-corrected photo); `hint`: rough corners (previous painting,
 // or placed by hand), used as an extra candidate, or as the only start with `onlyHint` (snap)
-export async function detectCorners(file: string | Buffer, hint?: Quad | null, onlyHint = false): Promise<Detection | null> {
-	const full = await grey(file)
+export async function detectCorners(file: string, hint?: Quad | null, onlyHint = false): Promise<Detection | null> {
+	const [full, small] = await Promise.all([fullGrey(file), onlyHint ? null : grey(file, COARSE_SIZE, 1)])
 	const starts: { quad: Quad; range: number }[] = []
 	const longSide = Math.max(full.width, full.height)
 	if (hint) starts.push({ quad: hint, range: Math.round(longSide * 0.04) })
-	if (!onlyHint) {
-		const small = await grey(file, COARSE_SIZE, 1)
+	if (small) {
 		const factor = full.width / small.width
 		const coarse = coarseQuad(small)
 		if (coarse) starts.push({ quad: scale(coarse, factor), range: Math.ceil(factor * 3) + 4 })
@@ -417,12 +432,8 @@ function measureBow(image: Grey, from: Point, to: Point): Bow {
 	return { bowPx, clear }
 }
 
-// the last photo stays in memory: the curves are measured again after every corner change
-let measured: { file: string; image: Promise<Grey> } | null = null
-
 // per side of `quad` (top, right, bottom, left, in the quad's own order)
 export async function measureBows(file: string, quad: Quad): Promise<Bow[]> {
-	if (measured?.file !== file) measured = { file, image: grey(file) }
-	const image = await measured.image
+	const image = await fullGrey(file)
 	return sidesOf(quad).map(([from, to]) => measureBow(image, from, to))
 }

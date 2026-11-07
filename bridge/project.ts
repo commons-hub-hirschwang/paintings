@@ -1,4 +1,4 @@
-// Capture projects: captures/projects/<name>/{raw/, paintings/, calibration.json, settings.json, groups.json}.
+// Capture projects: captures/projects/<name>/{raw/, paintings/, calibration.json, settings.json, stacks.json, out-of-stack.json}.
 // The current project is remembered in captures/current-project.
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -33,39 +33,48 @@ export function openProject(name: string, create = false) {
 	if (!existsSync(join(root, clean))) {
 		if (!create) throw new Error(`no project "${clean}"`)
 		mkdirSync(join(root, clean), { recursive: true })
-		writeFileSync(join(root, clean, 'groups.json'), JSON.stringify([newGroup('A')]))
+		writeFileSync(join(root, clean, 'stacks.json'), JSON.stringify([newStack('A')]))
 	}
 	writeFileSync(currentFile, clean)
 	return clean
 }
 
-// groups = physical stacks. The id is what paintings refer to and what gets synced; the name can be changed on the
+// physical stacks of paintings. The id is what paintings refer to and what gets synced; the name can be changed on the
 // gallery's /admin and is kept here for working offline
-export type Group = { id: string; name: string }
-const newGroup = (name: string): Group => ({ id: crypto.randomUUID(), name })
+export type Stack = { id: string; name: string }
+const newStack = (name: string): Stack => ({ id: crypto.randomUUID(), name })
 
-// groups from when they were just a letter: the same id as in the gallery's migration (0006_group-ids.sql)
-export const legacyGroupId = (letter: string) => `00000000-0000-0000-0000-${Buffer.from(letter).toString('hex').padStart(12, '0')}`
+// stacks from when they were just a letter: the same id as in the gallery's migration (0006_group-ids.sql)
+export const legacyStackId = (letter: string) => `00000000-0000-0000-0000-${Buffer.from(letter).toString('hex').padStart(12, '0')}`
 
-const groupsFile = () => projectPath('groups.json')
-export const listGroups = (): Group[] => {
-	const stored: (string | Group)[] = existsSync(groupsFile()) ? JSON.parse(readFileSync(groupsFile(), 'utf8')) : ['A']
-	return stored.map((g) => (typeof g === 'string' ? { id: legacyGroupId(g), name: g } : g))
+const stacksFile = () => projectPath('stacks.json')
+export const listStacks = (): Stack[] => {
+	// from when they were called groups
+	if (existsSync(projectPath('groups.json')) && !existsSync(stacksFile())) renameSync(projectPath('groups.json'), stacksFile())
+	const stored: (string | Stack)[] = existsSync(stacksFile()) ? JSON.parse(readFileSync(stacksFile(), 'utf8')) : ['A']
+	return stored.map((s) => (typeof s === 'string' ? { id: legacyStackId(s), name: s } : s))
 }
-const writeGroups = (groups: Group[]) => writeFileSync(groupsFile(), JSON.stringify(groups, null, '\t'))
+const writeStacks = (stacks: Stack[]) => writeFileSync(stacksFile(), JSON.stringify(stacks, null, '\t'))
 
-export function addGroup(input: string) {
+export function addStack(input: string) {
 	const name = input?.trim()
-	if (!name) throw new Error('a group needs a name')
-	const groups = listGroups()
-	if (groups.some((g) => g.name === name)) throw new Error(`there already is a group called "${name}"`)
-	const group = newGroup(name)
-	writeGroups([...groups, group])
-	return group
+	if (!name) throw new Error('a stack needs a name')
+	const stacks = listStacks()
+	if (stacks.some((s) => s.name === name)) throw new Error(`there already is a stack called "${name}"`)
+	const stack = newStack(name)
+	writeStacks([...stacks, stack])
+	return stack
 }
 
 // adopt the names from the gallery
-export function applyGroupNames(names: Record<string, string>) {
-	const groups = listGroups()
-	if (groups.some((g) => names[g.id] && names[g.id] !== g.name)) writeGroups(groups.map((g) => ({ ...g, name: names[g.id] ?? g.name })))
+export function applyStackNames(names: Record<string, string>) {
+	const stacks = listStacks()
+	if (stacks.some((s) => names[s.id] && names[s.id] !== s.name)) writeStacks(stacks.map((s) => ({ ...s, name: names[s.id] ?? s.name })))
+}
+
+// paintings that no longer count in a stack: the gallery knows (taken out or deleted there), last known state kept here
+const outFile = () => projectPath('out-of-stack.json')
+export const listOutOfStack = (): string[] => (existsSync(outFile()) ? JSON.parse(readFileSync(outFile(), 'utf8')) : [])
+export const setOutOfStack = (ids: string[]) => {
+	if (ids.join() !== listOutOfStack().join()) writeFileSync(outFile(), JSON.stringify(ids, null, '\t'))
 }

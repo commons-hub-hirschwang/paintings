@@ -114,11 +114,11 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 				</aside>
 			</section>
 
-			<section v-for="group in [{ title: 'Not rated yet', list: unrated }, { title: 'Rated', list: rated }]" :key="group.title">
-				<h2 v-if="group.list.length">{{ group.title }} ({{ group.list.length }})</h2>
+			<section v-for="section in [{ title: 'Not rated yet', list: unrated }, { title: 'Rated', list: rated }]" :key="section.title">
+				<h2 v-if="section.list.length">{{ section.title }} ({{ section.list.length }})</h2>
 				<div class="grid">
 					<figure
-						v-for="painting in group.list"
+						v-for="painting in section.list"
 						:key="painting.id"
 						:class="{ active: painting.id === currentId }"
 						@click="select(painting.id)"
