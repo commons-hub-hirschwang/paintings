@@ -16,9 +16,11 @@ export async function renderWebVariants(archive: Buffer) {
 
 // derive all web variants from the archive master, upload them, and record the config version + publish time: image
 // URLs carry this and are cached forever, so a changed painting needs a new one
-export async function publishWebVariants(paintingId: string, archive: Buffer) {
+export async function publishWebVariants(paintingId: string, archive: Buffer, step: (name: string) => void = () => {}) {
+	step('rendering')
 	const rendered = await renderWebVariants(archive)
 	for (const name of Object.keys(rendered) as WebVariant[]) {
+		step(`uploading ${name}`)
 		await api(`/paintings/${paintingId}/images/${name}`, {
 			method: 'PUT',
 			body: new Uint8Array(rendered[name]),

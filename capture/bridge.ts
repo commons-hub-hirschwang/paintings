@@ -1,6 +1,9 @@
 // Client for the local capture bridge (pnpm bridge), reached via the Vite dev proxy.
 import type { Calibration, Camera, Quad } from '../shared/geometry'
 
+// bridge/sync.ts
+export type SyncProgress = { done: number; total: number; title: string; step: string; stepsDone: number; steps: number }
+
 export type BridgeStatus = {
 	cameras: string[]
 	project: string | null
@@ -67,7 +70,9 @@ export const bridge = {
 	status: () => call<BridgeStatus>('/status'),
 	capture: () => call<Photo>('/capture', { method: 'POST' }),
 	upload: (file: File) => call<Photo>('/upload', { method: 'POST', body: file }),
-	detect: (file: string, quad: Quad) => call<Detection>('/detect', json({ file, quad })),
+	// previous: the corners shown before the hand moved some (see bridge/server.ts)
+	detect: (file: string, quad: Quad, previous: Quad | null) =>
+		call<Detection & { unsnapped: number }>('/detect', json({ file, quad, previous })),
 	bows: (file: string, quad: Quad) => call<Bow[]>('/bows', json({ file, quad })),
 	colorReference: (iso: number) => call<{ file: string; previous: ColorCalibration | null }>('/color/reference', json({ iso })),
 	calibrateColor: (file: string, box: Box, white: number) => call<ColorCalibration>('/color/calibrate', json({ file, box, white })),
@@ -89,6 +94,7 @@ export const bridge = {
 		call<{ painting: LocalPainting; calibration: Calibration | null }>('/process', json(body)),
 	paintings: () => call<LocalPainting[]>('/paintings'),
 	sync: () => call<{ synced: number; failed: { id: string; error: string }[] }>('/sync', { method: 'POST' }),
+	syncProgress: () => call<SyncProgress | null>('/sync/progress'),
 	paintingSource: (id: string) => call<{ file: string; camera: Camera; quad: Quad }>(`/paintings/${id}/source`),
 	changePainting: (id: string, change: PaintingChange) => call<LocalPainting>(`/paintings/${id}`, { ...json(change), method: 'PUT' }),
 	thumbUrl: ({ id, createdAt, updatedAt }: LocalPainting) => `/bridge/paintings/${id}/thumb.jpg?v=${updatedAt ?? createdAt}`,

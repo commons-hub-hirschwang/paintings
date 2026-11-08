@@ -1,6 +1,6 @@
 <script setup lang="ts">
-// Set the 4 painting corners: press anywhere and the nearest corner moves with the mouse (cursor hidden,
-// magnifier shown, Shift = 1/10 speed). Arrow keys nudge the selected corner by 1 px (Shift: 10 px), keys 1–4 select.
+// Set the 4 painting corners: hovering magnifies the nearest corner, press anywhere and it moves with the mouse
+// (cursor hidden, Shift = 1/10 speed). Arrow keys nudge the selected corner by 1 px (Shift: 10 px), keys 1–4 select.
 // The view can be turned in quarter turns (painting photographed sideways): the parent turns the corner order
 // along (turnCorners), the photo itself stays as it is; all screen input is turned back into photo coordinates.
 // Each side shows its measured curve (bows, true to scale) and the range it may curve in.
@@ -101,19 +101,24 @@ function setCorner(index: number, point: Point) {
 	quad.value = next
 }
 
-// Press anywhere: the nearest corner follows the pointer *relatively* (no jump), with the cursor hidden
-// (pointer lock) and the magnifier shown instead. Shift: 1/10 speed for precision.
+// Hover: the nearest corner is selected and shown magnified. Press anywhere: it follows the pointer
+// *relatively* (no jump), with the cursor hidden (pointer lock). Shift: 1/10 speed for precision.
 let dragPoint: Point = { x: 0, y: 0 } // local, since v-model updates lag one render behind
 let lastClient: Point = { x: 0, y: 0 }
+
+// the corner nearest to the pointer, in photo coordinates
+function nearestCorner(event: PointerEvent) {
+	const rect = frame.value!.getBoundingClientRect()
+	const fromCenter = toPhoto(event.clientX - rect.left - rect.width / 2, event.clientY - rect.top - rect.height / 2)
+	const pointer = { x: natural.value.width / 2 + fromCenter.x, y: natural.value.height / 2 + fromCenter.y }
+	const distances = quad.value!.map((corner) => Math.hypot(corner.x - pointer.x, corner.y - pointer.y))
+	return distances.indexOf(Math.min(...distances))
+}
 
 function startDrag(event: PointerEvent) {
 	if (!quad.value || event.button !== 0 || (event.target as HTMLElement).closest('button')) return
 	event.preventDefault()
-	const rect = frame.value!.getBoundingClientRect()
-	const fromCenter = toPhoto(event.clientX - rect.left - rect.width / 2, event.clientY - rect.top - rect.height / 2)
-	const pointer = { x: natural.value.width / 2 + fromCenter.x, y: natural.value.height / 2 + fromCenter.y }
-	const distances = quad.value.map((corner) => Math.hypot(corner.x - pointer.x, corner.y - pointer.y))
-	selected.value = distances.indexOf(Math.min(...distances))
+	selected.value = nearestCorner(event)
 	dragPoint = { ...quad.value[selected.value]! }
 	lastClient = { x: event.clientX, y: event.clientY }
 	dragging.value = true
@@ -123,8 +128,23 @@ function startDrag(event: PointerEvent) {
 	if (event.pointerType === 'mouse') Promise.resolve(editor.requestPointerLock()).catch(() => {})
 }
 
+// hovering already selects the corner a press would grab and shows it magnified
+function hover(event: PointerEvent) {
+	if (!quad.value || event.pointerType !== 'mouse') return
+	if ((event.target as HTMLElement).closest('button')) {
+		loupeVisible.value = false
+		return
+	}
+	selected.value = nearestCorner(event)
+	loupeVisible.value = true
+}
+
+function leave() {
+	if (!dragging.value) loupeVisible.value = false
+}
+
 function drag(event: PointerEvent) {
-	if (!dragging.value) return
+	if (!dragging.value) return hover(event)
 	// locked mouse: clientX is frozen, use movementX; touch/pen: client deltas
 	const locked = document.pointerLockElement !== null
 	const dx = locked ? event.movementX : event.clientX - lastClient.x
@@ -140,10 +160,10 @@ function drag(event: PointerEvent) {
 	setCorner(selected.value, dragPoint)
 }
 
-function endDrag() {
+function endDrag(event: PointerEvent) {
 	if (!dragging.value) return
 	dragging.value = false
-	loupeVisible.value = false
+	if (event.pointerType !== 'mouse') loupeVisible.value = false // a mouse still hovers: keep it
 	if (document.pointerLockElement) document.exitPointerLock()
 }
 
@@ -225,6 +245,7 @@ const loupeStyle = computed(() => {
 		@pointermove="drag"
 		@pointerup="endDrag"
 		@pointercancel="endDrag"
+		@pointerleave="leave"
 	>
 		<div class="view" :style="viewStyle">
 		<img :src="props.src" alt="captured photo" draggable="false" @load="onLoad" @dragstart.prevent />

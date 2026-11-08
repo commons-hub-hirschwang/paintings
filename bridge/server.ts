@@ -15,13 +15,13 @@ import sharp from 'sharp'
 import { checkConnection, fetchStackNames, getSettings, saveSettings } from './api'
 import { listPaintings, paintingFile, readPainting, savePainting, type LocalPainting } from './store'
 import { changePainting, correctedPhoto, dirs, ensureDirs, paintingSource, queueRender, rendersDone, resumeRenders, roundCm, type PaintingChange } from './render'
-import { isSynced, isWaiting, syncAll } from './sync'
+import { isSynced, isWaiting, syncAll, syncProgress } from './sync'
 import { currentProject, knownStackNames, listProjects, openProject, projectPath, setKnownStackNames } from './project'
 import { readOriented } from './warp'
 import { applyGains, calibrateColor, clippedShare, colorFile, correctionFor, DEFAULT_ISO, readColorCalibration, shotFile, takeReference, type Box, type ColorCalibration, type Gains } from './color'
 import { ensureLocked, exclusive, exposureMismatch, forgetCameraState, shoot } from './tether'
 import { exposureOf } from './camera'
-import { detectCorners, measureBows, trusted } from './detect'
+import { detectCorners, measureBows, snapCorners, trusted } from './detect'
 
 const run = promisify(execFile)
 const calibrationFile = () => projectPath('calibration.json')
@@ -157,14 +157,19 @@ app.get('/photo/:file', async (c) => {
 	return c.body(new Uint8Array(await photoView(photo.path, gains)), 200, { 'content-type': 'image/jpeg' })
 })
 
-// "snap": refine roughly placed corners to the painting's edges
+// "snap": refine roughly placed corners to the painting's edges. `previous`: the corners shown before (automatic,
+// opened or snapped). A corner moved by hand since was moved off a wrong edge: it only searches within 2/3 of how far
+// it was moved, so it can't snap back. Unmoved corners, or nothing shown before: the usual search.
 app.post('/detect', async (c) => {
-	const { file, quad } = await c.req.json<{ file: string; quad: Quad }>()
+	const { file, quad, previous } = await c.req.json<{ file: string; quad: Quad; previous?: Quad | null }>()
 	const photo = await correctedPhoto(file)
 	if (!photo) return c.notFound()
-	const detection = await detectCorners(photo.path, quad, true)
-	if (!detection) return c.json({ error: 'no clear edges near these corners' }, 422)
-	return c.json({ ...detection, trusted: trusted(detection, photo.camera) })
+	const radii = quad.map((p, k) => {
+		const moved = previous ? Math.hypot(p.x - previous[k]!.x, p.y - previous[k]!.y) : 0
+		return moved > 1 ? Math.max(2, (moved * 2) / 3) : null
+	})
+	const { detection, unsnapped } = await snapCorners(photo.path, quad, radii)
+	return c.json({ ...detection, trusted: trusted(detection, photo.camera), unsnapped })
 })
 
 // how the sides curve between the given corners, automatic or placed by hand
@@ -264,6 +269,8 @@ app.post('/sync', async (c) => {
 	await rendersDone()
 	return c.json(await syncAll(console.log))
 })
+
+app.get('/sync/progress', (c) => c.json(syncProgress))
 
 // open an existing project or create a new one (e.g. "test", "attic", a client's collection)
 app.post('/projects', async (c) => {

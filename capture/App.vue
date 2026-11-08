@@ -3,7 +3,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import ColorCalibration from './ColorCalibration.vue'
 import CornerEditor from './CornerEditor.vue'
-import { bridge, type Bow, type BridgeStatus, type Detection, type LocalPainting, type Photo } from './bridge'
+import { bridge, type Bow, type BridgeStatus, type Detection, type LocalPainting, type Photo, type SyncProgress } from './bridge'
 import { estimateSizeCm, MAX_BOW, reconstruct, turnCorners, type Camera, type Quad } from '../shared/geometry'
 
 const confirmedKey = () => `capture:calibration-confirmed:${status.value?.project}`
@@ -26,6 +26,10 @@ const turns = ref(0)
 // automatic corners (in the painting's orientation)
 const detection = ref<Detection | null>(null)
 const keptDetection = computed(() => !!detection.value && quad.value === detection.value.quad)
+// the corners shown last (automatic, opened or snapped): corners moved away from them were moved off a wrong edge,
+// a snap keeps them near where they were put
+let shown: Quad | null = null
+const snapWarning = ref('')
 // how the sides curve between the current corners: measured again after they changed, applied on save
 const bows = ref<Bow[] | null>(null)
 const maxBow = computed(() => Math.max(0, ...(bows.value?.map((side) => Math.abs(side.bowPx)) ?? [])))
@@ -209,6 +213,8 @@ const turnDetection = (d: Detection, by: number): Detection => ({
 function setPhoto(result: Photo) {
 	detection.value = result.detection && turnDetection(result.detection, turns.value)
 	quad.value = detection.value?.quad ?? null
+	shown = quad.value
+	snapWarning.value = ''
 	camera.value = result.camera
 	photo.value = result.file
 	warnings.value = result.warnings
@@ -217,8 +223,12 @@ function setPhoto(result: Photo) {
 // roughly placed corners → snapped to the painting's edges
 const snap = () =>
 	run('Snapping to edges…', async () => {
-		detection.value = turnDetection(await bridge.detect(photo.value!, quad.value!), turns.value)
-		quad.value = detection.value.quad
+		const result = await bridge.detect(photo.value!, quad.value!, shown)
+		detection.value = turnDetection(result, turns.value)
+		quad.value = shown = detection.value.quad
+		snapWarning.value = result.unsnapped
+			? `No edge near the moved corners (${result.unsnapped} side${result.unsnapped > 1 ? 's' : ''}): left where placed.`
+			: ''
 	})
 
 // painting photographed sideways: turn the view; the corners turn along (same points, new top)
@@ -229,6 +239,7 @@ function turn(direction: 1 | -1) {
 		detection.value = turnDetection(detection.value!, direction)
 		quad.value = detection.value.quad
 	} else if (quad.value) quad.value = turnCorners(quad.value, direction) as Quad
+	if (shown) shown = turnCorners(shown, direction) as Quad
 }
 function onKey(event: KeyboardEvent) {
 	if (event.key === 's' && !(event.target instanceof HTMLInputElement) && photo.value && quad.value && !busy.value) snap()
@@ -258,7 +269,8 @@ const openPainting = (painting: LocalPainting) =>
 		warnings.value = []
 		camera.value = photoCamera
 		photo.value = file
-		quad.value = corners
+		quad.value = shown = corners
+		snapWarning.value = ''
 		// the corner at the photo's top left tells how far the view was turned
 		const sums = corners.map((p) => p.x + p.y)
 		turns.value = sums.indexOf(Math.min(...sums))
@@ -326,9 +338,15 @@ const save = () =>
 		savedAs.value = painting.stack
 	})
 
+const SYNC_POLL = 300
+const syncing = ref<SyncProgress | null>(null)
 const sync = () =>
 	run(`Syncing to ${status.value?.galleryUrl}…`, async () => {
-		const { synced, failed } = await bridge.sync()
+		const poll = setInterval(() => bridge.syncProgress().then((progress) => (syncing.value = progress), () => {}), SYNC_POLL)
+		const { synced, failed } = await bridge.sync().finally(() => {
+			clearInterval(poll)
+			syncing.value = null
+		})
 		notice.value = `${synced} synced to ${status.value?.galleryUrl} (as drafts, not public yet)`
 		status.value = await bridge.status()
 		paintings.value = await bridge.paintings()
@@ -423,6 +441,7 @@ const cm = (value: number) => value.toFixed(1)
 					<legend>{{ editing ? `Edit ${editing.title || 'Untitled'}` : 'Painting' }}</legend>
 					<div class="notes">
 						<p v-for="warning in warnings" :key="warning" class="warning">{{ warning }}</p>
+						<p v-if="snapWarning" class="warning">{{ snapWarning }}</p>
 						<p v-if="keptDetection && !detection!.trusted" class="warning">Detection unsure — check the corners.</p>
 						<p v-else-if="!detection && !editing" class="warning">No painting edges found — set the corners.</p>
 						<p v-if="shape && shape.angleErrorDeg > 1.5" class="warning">Corners {{ shape.angleErrorDeg.toFixed(1) }}° off square — check the corners.</p>
@@ -539,6 +558,16 @@ const cm = (value: number) => value.toFixed(1)
 					</span>
 				</p>
 				<button :disabled="!!busy" @click="sync">Sync {{ status.unsynced || '' }}</button>
+				<template v-if="syncing">
+					<label>
+						{{ syncing.title }}: {{ syncing.step }}
+						<progress :value="syncing.stepsDone" :max="syncing.steps"></progress>
+					</label>
+					<label>
+						{{ syncing.done }} of {{ syncing.total }} paintings
+						<progress :value="syncing.done + syncing.stepsDone / syncing.steps" :max="syncing.total"></progress>
+					</label>
+				</template>
 				<form @submit.prevent="saveSettings">
 					<label>
 						Gallery URL
@@ -679,6 +708,12 @@ const cm = (value: number) => value.toFixed(1)
 
 	& .sync {
 		align-items: flex-start;
+
+		& progress {
+			display: block;
+			width: 20rem;
+			max-width: 100%;
+		}
 
 		& form {
 			display: flex;
