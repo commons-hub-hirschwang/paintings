@@ -500,12 +500,15 @@ export async function snapCorners(file: string, quad: Quad, radii: (number | nul
 	const [full, small] = await Promise.all([fullGrey(file), grey(file, COARSE_SIZE, 1)])
 	const factor = full.width / small.width
 	const coarseRange = Math.ceil(factor * 3) + 4
-	const limits = radii.map((r) => r ?? hintRange(full))
+	// after a drag, only dragged corners are held; the others go wherever the best edges are (the placed rect may be far
+	// off). Nothing dragged: everything stays near where it is
+	const dragged = radii.some((r) => r !== null)
+	const limits = radii.map((r) => r ?? (dragged ? Infinity : hintRange(full)))
 	const within = (candidate: Quad, slack: number) =>
 		alignedTo(candidate, quad).every((p, k) => Math.hypot(p.x - quad[k]!.x, p.y - quad[k]!.y) <= limits[k]! + slack)
 	const starts = coarseQuads(small, (q) => within(scale(q, factor), coarseRange)).map((q) => ({ quad: scale(q, factor), ranges: evenly(coarseRange) }))
 	// the placed corners refined in place: both sides of a limited corner searched only within its radius
-	const sideRadius = (k: number) => Math.min(limits[k]!, limits[(k + 1) % 4]!)
+	const sideRadius = (k: number) => Math.min(limits[k]!, limits[(k + 1) % 4]!, hintRange(full))
 	starts.push({ quad, ranges: [0, 1, 2, 3].map((k): [number, number] => [sideRadius(k), sideRadius(k)]) })
 	let best: { detection: Detection; score: number } | null = null
 	for (const { quad: start, ranges } of starts) {
