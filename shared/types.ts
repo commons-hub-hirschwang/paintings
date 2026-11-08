@@ -1,5 +1,6 @@
-export type PaintingStatus = 'draft' | 'available' | 'reserved' | 'sold'
-export const paintingStatuses: PaintingStatus[] = ['draft', 'available', 'reserved', 'sold']
+// draft and private don't show in the gallery
+export type PaintingStatus = 'draft' | 'private' | 'available' | 'reserved' | 'sold'
+export const paintingStatuses: PaintingStatus[] = ['draft', 'private', 'available', 'reserved', 'sold']
 
 export type Painting = {
 	id: string
@@ -39,3 +40,17 @@ export type AdminPainting = PublicPainting & { rating: number | null; ratings: n
 export type RatePainting = Painting & { my_score: number | null }
 
 export type UploadKey = { id: string; name: string; created_by: string; created_at: number; last_used_at: number | null }
+
+// one changed field of a painting (actor null: not changed through the app), with the painting as it is now
+export type PaintingLogEntry = {
+	id: number
+	painting_id: string
+	actor: string | null
+	field: string
+	old_value: string | number | null
+	new_value: string | number | null
+	created_at: number
+	title: string | null
+	stack: string | null
+	number: number | null
+}

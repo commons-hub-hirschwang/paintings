@@ -1,4 +1,5 @@
 // Users come from the USERS secret: "name:password[:admin|:author],…" — no role = rater.
+// Empty passwords only count with ALLOW_EMPTY_PASSWORDS, which only .dev.vars sets: for local development.
 // Website login sets a signed session cookie; capture laptops use upload keys (Bearer) instead.
 import type { Context } from 'hono'
 import { deleteCookie, getSignedCookie, setSignedCookie } from 'hono/cookie'
@@ -10,6 +11,9 @@ export type Bindings = {
 	IMAGES: R2Bucket
 	// `wrangler secret put USERS --env commons`, locally in .dev.vars
 	USERS: string
+	ALLOW_EMPTY_PASSWORDS?: string
+	STRIPE_SECRET_KEY?: string
+	STRIPE_WEBHOOK_SECRET?: string
 }
 export type Env = { Bindings: Bindings; Variables: { user: User; uploadKey: string } }
 
@@ -19,7 +23,7 @@ function users(env: Bindings) {
 	const map = new Map<string, { password: string; role: Role }>()
 	for (const entry of (env.USERS ?? '').split(',')) {
 		const [name, password, role] = entry.trim().split(':')
-		if (name && password) map.set(name, { password, role: role === 'admin' || role === 'author' ? role : 'rater' })
+		if (name && (password || env.ALLOW_EMPTY_PASSWORDS === 'true')) map.set(name, { password: password ?? '', role: role === 'admin' || role === 'author' ? role : 'rater' })
 	}
 	return map
 }

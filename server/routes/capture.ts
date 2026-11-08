@@ -3,10 +3,14 @@ import { Hono } from 'hono'
 import { imageKey, isWebVariant } from '../../shared/image-variants'
 import type { Painting } from '../../shared/types'
 import { requireUploadKey, type Env } from '../auth'
+import { changePaintings } from '../log'
 import { cleanStackName, nextNumberSql } from '../stacks'
 
 const capture = new Hono<Env>()
 capture.use(requireUploadKey)
+
+// how a capture laptop shows up in the log
+const laptop = (key: string) => `upload key "${key}"`
 
 capture.get('/me', (c) => c.json({ key: c.get('uploadKey') }))
 
@@ -27,11 +31,13 @@ capture.post('/uploads', async (c) => {
 	const body = await c.req.json<{ id: string; title?: string; width_cm?: number; height_cm?: number; stack: string; material?: string }>()
 	const stack = cleanStackName(body.stack)
 	if (!body.id || !stack) return c.json({ error: 'id and stack required' }, 400)
-	const { meta } = await c.env.DB.prepare(
-		`INSERT INTO paintings (id, title, width_cm, height_cm, stack, number, material) VALUES (?, ?, ?, ?, ?, ${nextNumberSql}, ?) ON CONFLICT (id) DO NOTHING`,
-	)
-		.bind(body.id, body.title ?? '', body.width_cm ?? null, body.height_cm ?? null, stack, stack, body.material || null)
-		.run()
+	const [{ meta }] = (await changePaintings(
+		c.env.DB,
+		laptop(c.get('uploadKey')),
+		c.env.DB.prepare(
+			`INSERT INTO paintings (id, title, width_cm, height_cm, stack, number, material) VALUES (?, ?, ?, ?, ?, ${nextNumberSql}, ?) ON CONFLICT (id) DO NOTHING`,
+		).bind(body.id, body.title ?? '', body.width_cm ?? null, body.height_cm ?? null, stack, stack, body.material || null),
+	)) as [D1Result]
 	return meta.changes ? c.json({ id: body.id }, 201) : c.json({ error: 'this painting was already uploaded' }, 409)
 })
 
@@ -39,7 +45,11 @@ capture.post('/uploads', async (c) => {
 capture.put('/paintings/:id', async (c) => {
 	const { width_cm, height_cm } = await c.req.json<{ width_cm: number; height_cm: number }>()
 	if (!(width_cm > 0) || !(height_cm > 0)) return c.json({ error: 'invalid size' }, 400)
-	const { meta } = await c.env.DB.prepare(`UPDATE paintings SET width_cm = ?, height_cm = ? WHERE id = ?`).bind(width_cm, height_cm, c.req.param('id')).run()
+	const [{ meta }] = (await changePaintings(
+		c.env.DB,
+		laptop(c.get('uploadKey')),
+		c.env.DB.prepare(`UPDATE paintings SET width_cm = ?, height_cm = ? WHERE id = ?`).bind(width_cm, height_cm, c.req.param('id')),
+	)) as [D1Result]
 	return meta.changes ? c.json({ ok: true }) : c.notFound()
 })
 

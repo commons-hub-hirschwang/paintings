@@ -1,5 +1,7 @@
-# copy to .dev.vars — users as name:password[:admin] (without :admin = rater)
+# copy to .dev.vars — users as name:password[:admin|:author] (no role = rater)
 # production: wrangler secret put USERS --env commons
-USERS=felix:change-me:admin,guest:change-me
+# local only, never set in production: log in with just a name
+ALLOW_EMPTY_PASSWORDS=true
+USERS=admin::admin,author::author,rater,guest
 # Stripe (test mode): STRIPE_SECRET_KEY=sk_test_…
 STRIPE_WEBHOOK_SECRET=

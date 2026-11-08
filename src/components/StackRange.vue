@@ -5,39 +5,42 @@ import { imageUrl } from '@/api'
 import type { AdminPainting } from '../../shared/types'
 
 const props = defineProps<{ name: string; paintings: AdminPainting[] }>()
-const ends = computed(() => {
-	const first = props.paintings[0]
-	const last = props.paintings.at(-1)
-	return first && last && first !== last ? [first, last] : first ? [first] : []
-})
+const first = computed(() => props.paintings[0])
+const last = computed(() => (props.paintings.length > 1 ? props.paintings.at(-1) : undefined))
 </script>
 
 <template>
 	<figure class="stack-range">
 		<figcaption>
-			<strong>{{ name }}</strong>
-			<span class="muted"> {{ paintings.length }} paintings<template v-if="ends.length"> · {{ ends.map((p) => `#${p.number}`).join(' – ') }}</template></span>
+			<strong>{{ name }}</strong> <span class="muted">{{ paintings.length }} paintings<template v-if="first"> · #{{ first.number }}<template v-if="last"> – #{{ last.number }}</template></template></span>
 		</figcaption>
 		<div>
-			<img v-for="painting in ends" :key="painting.id" :src="imageUrl(painting, 'thumb')" :alt="`#${painting.number}`" :title="`#${painting.number}`" />
+			<img v-if="first" :src="imageUrl(first, 'thumb')" :alt="`#${first.number}`" :title="`#${first.number}`" />
+			<span v-if="paintings.length > 2" aria-hidden="true">…</span>
+			<img v-if="last" :src="imageUrl(last, 'thumb')" :alt="`#${last.number}`" :title="`#${last.number}`" />
 		</div>
 	</figure>
 </template>
 
 <style>
 .stack-range {
+	display: flex;
+	flex-direction: column;
+	gap: var(--gap);
 	margin: 0;
+	padding: var(--gap);
+	border: 1px solid color-mix(in srgb, var(--muted) 50%, transparent);
+	border-radius: 0.3rem;
 
 	& div {
 		display: flex;
+		align-items: center;
 		gap: var(--gap);
 	}
 
 	& img {
-		width: 300px;
-		max-width: 40vw;
-		height: 300px;
-		max-height: 40vw;
+		width: 9rem;
+		height: 9rem;
 		object-fit: contain;
 	}
 }

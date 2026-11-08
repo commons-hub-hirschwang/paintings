@@ -50,7 +50,9 @@ grabbed it: `pkill -f gvfs-gphoto2-volume-monitor`.
 **The gallery is the one source of truth.** A stack is just a name. A painting is uploaded once with its stack, name and material, and gets the next `#` of that stack, so its stack + `#` identify it. From then on those belong to the gallery; the capture tool only sends new images and size, by id. Uploads happen in capture order and stop at the first failure.
 
 On `/admin`:
-- **Take out** is a flag, separate from the status: a sold painting stays findable until someone gets it. **Put back where it was** keeps the `#`, **on top** takes the next one.
+- **Private** paintings, like drafts, don't show in the gallery; raters still see them.
+- **Logs** show who changed what about a painting. Database triggers write them (`server/log.ts` names who is acting).
+- **Removed** (physically taken out of the stack) is a checkbox, separate from the status: a sold painting stays findable until someone gets it, and a sale never changes it. **Put back where it was** keeps the `#`, **on top** takes the next one.
 - **Move to stack** puts a painting on top of another stack, with its next `#`.
 - **Merge** and **split** stacks, after a preview. Taken-out paintings go along.
 - The **Index** column says where to look in the physical stack: how many paintings before it are still there. It changes, the `#` doesn't.

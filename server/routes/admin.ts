@@ -1,8 +1,9 @@
 import { Hono } from 'hono'
 import { FormulaError } from '../../shared/expr'
 import { defaultPriceFormula, priceExamples, priceFunction } from '../../shared/pricing'
-import { paintingStatuses, type AdminPainting, type Painting, type UploadKey } from '../../shared/types'
+import { paintingStatuses, type AdminPainting, type Painting, type PaintingLogEntry, type UploadKey } from '../../shared/types'
 import { requireRole, sha256, type Env } from '../auth'
+import { changePaintings } from '../log'
 import { getPriceFormula, getPriceFunction } from '../settings'
 import { cleanStackName, nextNumberSql, stackIndexSql } from '../stacks'
 
@@ -19,7 +20,9 @@ admin.get('/paintings', async (c) => {
 	return c.json(results.map((p) => ({ ...p, price: price(p.width_cm, p.height_cm, p.rating) })))
 })
 
-admin.get('/pricing', async (c) => c.json({ formula: await getPriceFormula(c.env.DB), default: defaultPriceFormula }))
+admin.get('/pricing', async (c) =>
+	c.json({ formula: await getPriceFormula(c.env.DB), default: defaultPriceFormula, stripe: !!c.env.STRIPE_SECRET_KEY, webhook: !!c.env.STRIPE_WEBHOOK_SECRET }),
+)
 
 // validated before saving: must parse and give a price for the examples
 admin.put('/pricing', async (c) => {
@@ -46,7 +49,7 @@ admin.patch('/paintings', async (c) => {
 	const { ids, status } = await c.req.json<{ ids: string[]; status: Painting['status'] }>()
 	if (!paintingStatuses.includes(status)) return c.json({ error: 'invalid status' }, 400)
 	if (!Array.isArray(ids) || !ids.length) return c.json({ error: 'no paintings selected' }, 400)
-	await c.env.DB.batch(ids.map((id) => c.env.DB.prepare(`UPDATE paintings SET status = ? WHERE id = ?`).bind(status, id)))
+	await changePaintings(c.env.DB, c.get('user').name, ...ids.map((id) => c.env.DB.prepare(`UPDATE paintings SET status = ? WHERE id = ?`).bind(status, id)))
 	return c.json({ ok: true })
 })
 
@@ -61,7 +64,7 @@ admin.put('/paintings/deleted', async (c) => {
 			WHEN EXISTS (SELECT 1 FROM paintings q WHERE q.stack = paintings.stack AND q.number = paintings.number AND q.deleted_at IS NULL AND q.id != paintings.id)
 			THEN (SELECT COALESCE(MAX(q.number), -1) + 1 FROM paintings q WHERE q.stack = paintings.stack) ELSE number END`
 	const from = deleted ? 'deleted_at IS NULL' : 'deleted_at IS NOT NULL'
-	await c.env.DB.batch(ids.map((id) => c.env.DB.prepare(`UPDATE paintings SET ${change} WHERE id = ? AND ${from}`).bind(id)))
+	await changePaintings(c.env.DB, c.get('user').name, ...ids.map((id) => c.env.DB.prepare(`UPDATE paintings SET ${change} WHERE id = ? AND ${from}`).bind(id)))
 	return c.json({ ok: true })
 })
 
@@ -77,7 +80,7 @@ admin.put('/paintings/taken-out', async (c) => {
 			: `taken_out_at = NULL`
 	// only paintings actually changing sides: one already in its stack keeps its place
 	const from = out ? 'taken_out_at IS NULL' : 'taken_out_at IS NOT NULL'
-	await c.env.DB.batch(ids.map((id) => c.env.DB.prepare(`UPDATE paintings SET ${change} WHERE id = ? AND ${from}`).bind(id)))
+	await changePaintings(c.env.DB, c.get('user').name, ...ids.map((id) => c.env.DB.prepare(`UPDATE paintings SET ${change} WHERE id = ? AND ${from}`).bind(id)))
 	return c.json({ ok: true })
 })
 
@@ -87,8 +90,10 @@ admin.put('/paintings/stack', async (c) => {
 	const stack = cleanStackName(input)
 	if (!stack) return c.json({ error: 'invalid stack name' }, 400)
 	if (!Array.isArray(ids) || !ids.length) return c.json({ error: 'no paintings selected' }, 400)
-	await c.env.DB.batch(
-		ids.map((id) => c.env.DB.prepare(`UPDATE paintings SET stack = ?, number = ${nextNumberSql} WHERE id = ? AND stack IS NOT ?`).bind(stack, stack, id, stack)),
+	await changePaintings(
+		c.env.DB,
+		c.get('user').name,
+		...ids.map((id) => c.env.DB.prepare(`UPDATE paintings SET stack = ?, number = ${nextNumberSql} WHERE id = ? AND stack IS NOT ?`).bind(stack, stack, id, stack)),
 	)
 	return c.json({ ok: true })
 })
@@ -98,9 +103,11 @@ admin.patch('/paintings/:id', async (c) => {
 	if (body.status && !paintingStatuses.includes(body.status)) return c.json({ error: 'invalid status' }, 400)
 	const fields = (['title', 'width_cm', 'height_cm', 'status'] as const).filter((f) => f in body)
 	if (!fields.length) return c.json({ error: 'nothing to update' }, 400)
-	const { meta } = await c.env.DB.prepare(`UPDATE paintings SET ${fields.map((f) => `${f} = ?`).join(', ')} WHERE id = ?`)
-		.bind(...fields.map((f) => body[f] ?? null), c.req.param('id'))
-		.run()
+	const [{ meta }] = (await changePaintings(
+		c.env.DB,
+		c.get('user').name,
+		c.env.DB.prepare(`UPDATE paintings SET ${fields.map((f) => `${f} = ?`).join(', ')} WHERE id = ?`).bind(...fields.map((f) => body[f] ?? null), c.req.param('id')),
+	)) as [D1Result]
 	return meta.changes ? c.json({ ok: true }) : c.notFound()
 })
 
@@ -120,7 +127,7 @@ admin.put('/stacks/rename', async (c) => {
 	if (!name) return c.json({ error: 'invalid name' }, 400)
 	if (name === body.stack) return c.json({ ok: true })
 	if (await stackExists(c.env.DB, name)) return c.json({ error: nameTaken(name) }, 400)
-	const { meta } = await c.env.DB.prepare(`UPDATE paintings SET stack = ? WHERE stack = ?`).bind(name, body.stack).run()
+	const [{ meta }] = (await changePaintings(c.env.DB, c.get('user').name, c.env.DB.prepare(`UPDATE paintings SET stack = ? WHERE stack = ?`).bind(name, body.stack))) as [D1Result]
 	return meta.changes ? c.json({ ok: true }) : c.notFound()
 })
 
@@ -133,10 +140,12 @@ admin.post('/stacks/merge', async (c) => {
 	if (name !== body.lower && name !== body.upper && (await stackExists(c.env.DB, name))) return c.json({ error: nameTaken(name) }, 400)
 	const { top } = (await c.env.DB.prepare(`SELECT MAX(number) AS top FROM paintings WHERE stack = ?`).bind(body.lower).first<{ top: number | null }>())!
 	if (top === null || !(await stackExists(c.env.DB, body.upper))) return c.notFound()
-	await c.env.DB.batch([
+	await changePaintings(
+		c.env.DB,
+		c.get('user').name,
 		...renumber(c.env.DB, body.upper, '', [], top + 1, name),
 		c.env.DB.prepare(`UPDATE paintings SET stack = ? WHERE stack = ?`).bind(name, body.lower),
-	])
+	)
 	return c.json({ ok: true })
 })
 
@@ -150,11 +159,21 @@ admin.post('/stacks/split', async (c) => {
 	const below = await c.env.DB.prepare(`SELECT 1 FROM paintings WHERE stack = ? AND number < ?`).bind(body.stack, body.at).first()
 	const start = await c.env.DB.prepare(`SELECT MIN(number) AS start FROM paintings WHERE stack = ? AND number >= ?`).bind(body.stack, body.at).first<{ start: number | null }>()
 	if (!below || start?.start === null || start?.start === undefined) return c.json({ error: 'both parts need a painting' }, 400)
-	await c.env.DB.batch([
+	await changePaintings(
+		c.env.DB,
+		c.get('user').name,
 		c.env.DB.prepare(`UPDATE paintings SET stack = ? WHERE stack = ? AND number < ?`).bind(lower, body.stack, body.at),
 		...renumber(c.env.DB, body.stack, 'AND number >= ?', [body.at], -start.start, upper),
-	])
+	)
 	return c.json({ ok: true })
+})
+
+// the latest changes, with the painting as it is now
+admin.get('/log', async (c) => {
+	const { results } = await c.env.DB.prepare(
+		`SELECT l.*, p.title, p.stack, p.number FROM painting_log l LEFT JOIN paintings p ON p.id = l.painting_id ORDER BY l.id DESC LIMIT 2000`,
+	).all<PaintingLogEntry>()
+	return c.json(results)
 })
 
 admin.get('/keys', async (c) => {

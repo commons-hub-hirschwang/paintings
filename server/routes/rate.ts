@@ -3,6 +3,7 @@
 import { Hono } from 'hono'
 import type { RatePainting } from '../../shared/types'
 import { requireRole, type Env } from '../auth'
+import { changePaintings } from '../log'
 
 const rate = new Hono<Env>()
 rate.use(requireRole('admin', 'author', 'rater'))
@@ -35,7 +36,7 @@ rate.put('/paintings/:id', async (c) => {
 rate.put('/paintings/:id/title', requireRole('admin', 'author'), async (c) => {
 	const { title } = await c.req.json<{ title: string }>()
 	if (typeof title !== 'string' || title.length > 200) return c.json({ error: 'invalid name' }, 400)
-	const { meta } = await c.env.DB.prepare(`UPDATE paintings SET title = ? WHERE id = ?`).bind(title.trim(), c.req.param('id')).run()
+	const [{ meta }] = (await changePaintings(c.env.DB, c.get('user').name, c.env.DB.prepare(`UPDATE paintings SET title = ? WHERE id = ?`).bind(title.trim(), c.req.param('id')))) as [D1Result]
 	return meta.changes ? c.json({ ok: true }) : c.notFound()
 })
 

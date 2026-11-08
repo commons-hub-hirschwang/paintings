@@ -4,10 +4,14 @@ import { Hono } from 'hono'
 import { shipping, shippingOptions } from '../../shared/shipping'
 import type { Painting } from '../../shared/types'
 import type { Env } from '../auth'
+import { changePaintings } from '../log'
 import { getPriceFunction } from '../settings'
 
 type ShopEnv = Env & { Bindings: Env['Bindings'] & { STRIPE_SECRET_KEY: string; STRIPE_WEBHOOK_SECRET: string } }
 const shop = new Hono<ShopEnv>()
+
+// how the shop's own status changes show up in the log
+const SHOP = 'shop'
 
 async function stripe(key: string, path: string, params: Record<string, string | number>) {
 	const response = await fetch(`https://api.stripe.com/v1/${path}`, {
@@ -32,7 +36,7 @@ shop.post('/checkout/:id', async (c) => {
 	if (!painting || !amount) return c.json({ error: 'not for sale' }, 404)
 
 	// atomic reservation: only one buyer at a time
-	const { meta } = await c.env.DB.prepare(`UPDATE paintings SET status = 'reserved' WHERE id = ? AND status = 'available'`).bind(id).run()
+	const [{ meta }] = (await changePaintings(c.env.DB, SHOP, c.env.DB.prepare(`UPDATE paintings SET status = 'reserved' WHERE id = ? AND status = 'available'`).bind(id))) as [D1Result]
 	if (!meta.changes) return c.json({ error: 'this painting is reserved or sold' }, 409)
 
 	const origin = new URL(c.req.url).origin
@@ -63,7 +67,7 @@ shop.post('/checkout/:id', async (c) => {
 		const session = await stripe(c.env.STRIPE_SECRET_KEY, 'checkout/sessions', params)
 		return c.json({ url: session.url })
 	} catch (error) {
-		await c.env.DB.prepare(`UPDATE paintings SET status = 'available' WHERE id = ? AND status = 'reserved'`).bind(id).run()
+		await changePaintings(c.env.DB, SHOP, c.env.DB.prepare(`UPDATE paintings SET status = 'available' WHERE id = ? AND status = 'reserved'`).bind(id))
 		return c.json({ error: (error as Error).message }, 502)
 	}
 })
@@ -85,9 +89,9 @@ shop.post('/stripe/webhook', async (c) => {
 	const event = JSON.parse(payload) as { type: string; data: { object: { metadata?: { painting_id?: string } } } }
 	const id = event.data.object.metadata?.painting_id
 	if (id && event.type === 'checkout.session.completed')
-		await c.env.DB.prepare(`UPDATE paintings SET status = 'sold' WHERE id = ?`).bind(id).run()
+		await changePaintings(c.env.DB, SHOP, c.env.DB.prepare(`UPDATE paintings SET status = 'sold' WHERE id = ?`).bind(id))
 	if (id && event.type === 'checkout.session.expired')
-		await c.env.DB.prepare(`UPDATE paintings SET status = 'available' WHERE id = ? AND status = 'reserved'`).bind(id).run()
+		await changePaintings(c.env.DB, SHOP, c.env.DB.prepare(`UPDATE paintings SET status = 'available' WHERE id = ? AND status = 'reserved'`).bind(id))
 	return c.json({ received: true })
 })
 
