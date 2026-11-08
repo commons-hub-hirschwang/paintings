@@ -15,7 +15,8 @@
     "db:migrate": "wrangler d1 migrations apply DB --local",
     "db:migrate:commons": "wrangler d1 migrations apply DB --remote --env commons",
     "sync": "tsx scripts/sync.ts",
-    "capture": "tsx watch --clear-screen=false bridge/server.ts"
+    "capture": "tsx watch --clear-screen=false bridge/server.ts",
+    "video": "tsx scripts/video.ts"
   },
   "dependencies": {
     "exif-reader": "^2.0.3",
