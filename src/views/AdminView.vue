@@ -81,6 +81,16 @@ onBeforeUnmount(() => clearInterval(live))
 	& table {
 		border-collapse: collapse;
 
+		/* the header stays visible while the page scrolls the rows under it */
+		& thead {
+			position: sticky;
+			top: 0;
+			z-index: 1;
+			background: var(--bg);
+			/* collapsed borders don't stick along, this line does */
+			box-shadow: 0 1px 0 color-mix(in srgb, var(--muted) 30%, transparent);
+		}
+
 		& th {
 			text-align: left;
 		}
