@@ -189,6 +189,10 @@ const capture = () => {
 	return run('Capturing…', async () => setPhoto(await bridge.capture()))
 }
 
+// size of the captured paintings' icons (rem), remembered in this browser; small ones without captions
+const iconSize = ref(Number(localStorage.getItem('capture:icon-size')) || 8)
+watch(iconSize, (size) => localStorage.setItem('capture:icon-size', String(size)))
+
 // after saving a painting: on to the next one, or a pause. Enter or Space goes on, Esc stops
 const savedAs = ref('')
 const nextButton = ref<HTMLButtonElement>()
@@ -280,7 +284,6 @@ const openPainting = (painting: LocalPainting) =>
 		typingMaterial.value = false
 		widthCm.value = painting.widthCm
 		heightCm.value = painting.heightCm
-		window.scrollTo({ top: 0 })
 	})
 
 function closeEditor() {
@@ -523,8 +526,9 @@ const cm = (value: number) => value.toFixed(1)
 				</div>
 			</section>
 
-			<fieldset v-if="paintings.length" class="saved">
+			<fieldset v-if="paintings.length" class="saved" :class="{ compact: iconSize < 7 }" :style="{ '--icon-size': `${iconSize}rem` }">
 				<legend>Captured ({{ paintings.length }})</legend>
+				<label class="icon-size">Icon size <input v-model.number="iconSize" type="range" min="3" max="24" step="1" /></label>
 				<button
 					v-for="painting in paintings"
 					:key="painting.id"
@@ -729,8 +733,19 @@ const cm = (value: number) => value.toFixed(1)
 
 	& .saved {
 		display: grid;
-		grid-template-columns: repeat(auto-fill, minmax(8rem, 1fr));
+		grid-template-columns: repeat(auto-fill, minmax(var(--icon-size), 1fr));
 		gap: var(--gap);
+
+		& .icon-size {
+			grid-column: 1 / -1;
+			display: flex;
+			align-items: center;
+			gap: var(--gap);
+		}
+
+		&.compact .caption {
+			display: none;
+		}
 
 		& > button {
 			padding: 0.25rem;
