@@ -40,10 +40,16 @@ function start() {
 	next()
 }
 
-const shared = (data: Uint8Array) => {
-	const copy = new SharedArrayBuffer(data.length)
-	new Uint8Array(copy).set(data)
-	return copy
+// Shared buffers are reused, not made per image: a thread keeps the last buffers it was sent until its own garbage
+// collector runs, which hardly ever happens (it allocates almost nothing itself), so new ones per photo leaked 144 MB
+// each. Buffers are only ever as many as images being remapped at once (×2).
+const free: SharedArrayBuffer[] = []
+const ROUND = 16 * 2 ** 20 // sizes rounded up, so slightly different images fit the same buffer
+function borrow(size: number) {
+	const fitting = free.filter((buffer) => buffer.byteLength >= size).sort((a, b) => a.byteLength - b.byteLength)[0]
+	if (!fitting) return new SharedArrayBuffer(Math.ceil(size / ROUND) * ROUND)
+	free.splice(free.indexOf(fitting), 1)
+	return fitting
 }
 
 // the width×height RGB image `mapping` makes of the source
@@ -52,19 +58,24 @@ export async function remap(source: { data: Uint8Array; width: number; height: n
 		started = true
 		for (let k = 0; k < THREADS; k++) start()
 	}
-	const src = shared(source.data)
-	const out = new SharedArrayBuffer(width * height * 3)
-	const count = Math.min(CHUNKS, height)
-	const chunks: Promise<void>[] = []
-	for (let k = 0; k < count; k++) {
-		const rows = { src, sourceWidth: source.width, sourceHeight: source.height, out, width, height, fromRow: Math.floor((k * height) / count), toRow: Math.floor(((k + 1) * height) / count), mapping }
-		chunks.push(
-			new Promise((done, failed) => {
-				waiting.push({ rows, done, failed })
-				idle.values().next().value?.()
-			}),
-		)
+	const src = borrow(source.data.length)
+	new Uint8Array(src).set(source.data)
+	const out = borrow(width * height * 3)
+	try {
+		const count = Math.min(CHUNKS, height)
+		const chunks: Promise<void>[] = []
+		for (let k = 0; k < count; k++) {
+			const rows = { src, sourceWidth: source.width, sourceHeight: source.height, out, width, height, fromRow: Math.floor((k * height) / count), toRow: Math.floor(((k + 1) * height) / count), mapping }
+			chunks.push(
+				new Promise((done, failed) => {
+					waiting.push({ rows, done, failed })
+					idle.values().next().value?.()
+				}),
+			)
+		}
+		await Promise.all(chunks)
+		return Buffer.from(new Uint8Array(out, 0, width * height * 3)) // a copy: the buffer goes on to the next image
+	} finally {
+		free.push(src, out)
 	}
-	await Promise.all(chunks)
-	return Buffer.from(out)
 }

@@ -21,7 +21,7 @@ import { readOriented } from './warp'
 import { applyGains, calibrateColor, clippedShare, colorFile, correctionFor, DEFAULT_ISO, readColorCalibration, shotFile, takeReference, type Box, type ColorCalibration, type Gains } from './color'
 import { ensureLocked, exclusive, exposureMismatch, forgetCameraState, shoot } from './tether'
 import { exposureOf } from './camera'
-import { detectCorners, measureBows, snapCorners, trusted } from './detect'
+import { detectCorners, keepOnly, measureBows, snapCorners, trusted } from './detect'
 
 const run = promisify(execFile)
 const calibrationFile = () => projectPath('calibration.json')
@@ -44,6 +44,7 @@ function photoView(path: string, gains: Gains) {
 
 async function photoResult(file: string) {
 	const photo = (await correctedPhoto(file))!
+	keepOnly(photo.path)
 	correctionFor(photo.raw).then((color) => color && photoView(photo.path, color.gains)).catch(console.error)
 	const hint = lastQuad && lastQuad.width === photo.camera.width && lastQuad.height === photo.camera.height ? lastQuad.quad : null
 	const detection = await detectCorners(photo.path, hint).catch((error) => (console.error(error), null))

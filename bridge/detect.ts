@@ -45,6 +45,10 @@ function fullGrey(file: string) {
 	if (kept.size > KEPT_PHOTOS) kept.delete(kept.keys().next().value!)
 	return image
 }
+// a new photo: the others' are let go (a background render still needing one reads it again)
+export function keepOnly(file: string) {
+	for (const other of kept.keys()) if (other !== file) kept.delete(other)
+}
 
 // RANSAC's random picks, seeded on every detection: the same photo always gives the same corners
 let seed = 0
