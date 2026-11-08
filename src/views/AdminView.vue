@@ -89,6 +89,11 @@ onBeforeUnmount(() => clearInterval(live))
 			background: var(--bg);
 			/* collapsed borders don't stick along, this line does */
 			box-shadow: 0 1px 0 color-mix(in srgb, var(--muted) 30%, transparent);
+
+			/* a semi-transparent border inside would let the rows show through */
+			& th {
+				border-bottom: none;
+			}
 		}
 
 		& th {
