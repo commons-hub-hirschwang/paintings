@@ -8,7 +8,6 @@ loadPaintings()
 
 <template>
 	<main id="gallery">
-		<p class="name">Thomas Fritsch – Digitale Gallerie an der Rax</p>
 		<p v-if="paintings?.length === 0" class="muted">No paintings yet.</p>
 		<div class="tiles">
 			<RouterLink v-for="painting in paintings" :key="painting.id" :to="`/p/${painting.id}`" :style="wallColors(painting.id, painting.color)">
@@ -32,12 +31,6 @@ loadPaintings()
 
 <style>
 #gallery {
-	/* name line; the login info floats at its right end */
-	& .name {
-		margin: 0 0 var(--gap);
-		padding-right: 8rem;
-	}
-
 	/* tiles side by side without gaps: the walls meet; painting and caption always fit into their square */
 	& .tiles {
 		display: grid;

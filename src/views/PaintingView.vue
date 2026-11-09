@@ -22,10 +22,6 @@ const next = computed(() => (index.value >= 0 ? paintings.value![index.value + 1
 // replace: browser back always returns to the gallery, however many paintings were flipped through
 const go = (to: { id: string } | undefined) => to && router.replace(`/p/${to.id}`)
 
-function backToGallery() {
-	if (history.state?.back === '/') router.back()
-	else router.push('/')
-}
 
 async function buy() {
 	buying.value = true
@@ -213,9 +209,6 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 
 <template>
 	<main id="painting">
-		<nav>
-			<a href="/" @click.prevent="backToGallery">← Gallery</a>
-		</nav>
 		<p v-if="painting === null" class="muted">Painting not found.</p>
 		<template v-else-if="painting">
 			<div ref="content" class="content" :class="layout.mode">
@@ -268,12 +261,19 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 </template>
 
 <style>
-/* nav, painting and info always fit the viewport (minus #app's padding); the painting takes what is left */
+/* header, painting and info always fit the viewport; the painting takes what is left */
+#app:has(#painting) {
+	display: flex;
+	flex-direction: column;
+	height: 100dvh;
+}
+
 #painting {
 	display: flex;
 	flex-direction: column;
 	gap: var(--gap);
-	height: calc(100dvh - 2 * var(--gap));
+	flex: 1;
+	min-height: 0;
 
 	/* below the nav: painting, ‹ › and info, centered together; the painting's size is set by the script (layout) */
 	& .content {
