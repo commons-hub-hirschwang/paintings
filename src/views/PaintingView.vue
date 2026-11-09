@@ -66,18 +66,25 @@ function toggleMagnifier(event: MouseEvent) {
 	else lens.value = undefined
 }
 
+// both lens and its content are placed with transforms: those stay sub-pixel, so the content glides instead of
+// snapping to whole pixels independently of the lens (which made it wiggle)
 const lensStyle = computed(() => {
 	const l = lens.value
-	if (!l || !painting.value) return undefined
-	const zoom = detailWidth.value ? Math.max(1, detailWidth.value / l.width) : 2
+	if (!l) return undefined
 	return {
 		width: `${lensSize}px`,
 		height: `${lensSize}px`,
-		left: `${l.x - lensSize / 2}px`,
-		top: `${l.y - lensSize / 2}px`,
-		backgroundImage: `url(${imageUrl(painting.value, 'detail')}), url(${imageUrl(painting.value, 'normal')})`,
-		backgroundSize: `${l.width * zoom}px ${l.height * zoom}px`,
-		backgroundPosition: `${lensSize / 2 - l.px * zoom}px ${lensSize / 2 - l.py * zoom}px`,
+		transform: `translate(${l.x - lensSize / 2}px, ${l.y - lensSize / 2}px)`,
+	}
+})
+const lensContentStyle = computed(() => {
+	const l = lens.value
+	if (!l) return undefined
+	const zoom = detailWidth.value ? Math.max(1, detailWidth.value / l.width) : 2
+	return {
+		width: `${l.width * zoom}px`,
+		height: `${l.height * zoom}px`,
+		transform: `translate(${lensSize / 2 - l.px * zoom}px, ${lensSize / 2 - l.py * zoom}px)`,
 	}
 })
 
@@ -152,7 +159,11 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 					@pointerleave="lens = undefined"
 				/>
 			</div>
-			<div v-if="magnifying && lensStyle" class="lens" :style="lensStyle"></div>
+			<div v-if="magnifying && lensStyle" class="lens" :style="lensStyle">
+				<!-- normal image until the detail one (on top) has loaded -->
+				<img :src="imageUrl(painting, 'normal')" alt="" :style="lensContentStyle" />
+				<img :src="imageUrl(painting, 'detail')" alt="" :style="lensContentStyle" />
+			</div>
 			<aside>
 				<div>
 					<h1>{{ painting.title || 'Untitled' }}</h1>
@@ -228,12 +239,25 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 
 	& .lens {
 		position: fixed;
+		top: 0;
+		left: 0;
+		overflow: hidden;
 		pointer-events: none;
 		border-radius: 50%;
-		border: 2px solid #fff;
+		/* outline, not border: the content's origin stays the lens' corner */
+		outline: 2px solid #fff;
 		box-shadow: 0 0.3rem 1.2rem #000;
-		background-repeat: no-repeat;
-		background-color: #000;
+		/* beyond the painting's edge: the wall */
+		background: var(--bg);
+		will-change: transform;
+
+		& img {
+			position: absolute;
+			top: 0;
+			left: 0;
+			max-width: none;
+			will-change: transform;
+		}
 	}
 }
 </style>

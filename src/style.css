@@ -1,17 +1,12 @@
 :root {
-	--bg: #faf8f5;
-	--fg: #222;
-	--muted: #777;
+	/* neutral mid grey, light and dark mode alike: paintings and their walls carry the color */
+	--bg: #888;
+	--fg: #111;
+	--muted: #333;
 	--gap: 1rem;
-	color-scheme: light dark;
+	color-scheme: light;
 	font-family: system-ui, sans-serif;
 	line-height: 1.5;
-
-	@media (prefers-color-scheme: dark) {
-		--bg: #161514;
-		--fg: #eee;
-		--muted: #999;
-	}
 }
 
 * {
@@ -57,6 +52,11 @@ select {
 	border: 1px solid var(--muted);
 	border-radius: 0.3rem;
 	background: transparent;
+}
+
+::placeholder {
+	color: #fff;
+	opacity: 0.8;
 }
 
 /* select and its (native) option list in the page colors: the list is not transparent */
