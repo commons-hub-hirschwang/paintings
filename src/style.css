@@ -22,6 +22,7 @@ body {
 	margin: 0;
 	background: var(--bg);
 	color: var(--fg);
+	transition: background 0.4s;
 }
 
 a {
@@ -29,6 +30,7 @@ a {
 }
 
 #app {
+	position: relative;
 	max-width: 1400px;
 	margin: 0 auto;
 	padding: var(--gap);
@@ -131,16 +133,14 @@ fieldset {
 	}
 }
 
-/* a painting glowing in its own average color (--ambient, set inline): strong in the middle, fading to the sides; the
-   painting casts a shadow onto it, keeps its aspect ratio and is centered in the box */
-.ambient {
-	--ambient: color-mix(in srgb, var(--muted) 40%, transparent);
+/* a painting hanging on a wall: the wall takes the painting's average color (set by the view), the painting casts a
+   shadow onto it, keeps its aspect ratio and is centered in the box */
+.wall {
 	display: flex;
 	align-items: center;
 	justify-content: center;
 	min-width: 0;
 	min-height: 0;
-	background: radial-gradient(closest-side, var(--ambient) 30%, color-mix(in srgb, var(--ambient) 10%, transparent));
 
 	& img {
 		display: block;

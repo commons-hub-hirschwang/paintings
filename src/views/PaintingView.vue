@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch, watchEffect } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { formatPrice, imageUrl, loadPaintings, paintings } from '@/api'
-import { ambient, measureAmbient } from '@/ambient'
+import { ambient, cornerRadius, measureAmbient } from '@/ambient'
 import { sizeLabel } from '../../shared/types'
 
 const route = useRoute()
@@ -102,6 +102,21 @@ watch(
 	{ immediate: true },
 )
 
+// the whole page takes the painting's average color, text in contrast to it
+const pageColors = ['--bg', '--fg', '--muted']
+function resetPageColors() {
+	for (const name of pageColors) document.documentElement.style.removeProperty(name)
+}
+watchEffect(() => {
+	const a = painting.value && ambient.get(painting.value.id)
+	if (!a) return resetPageColors()
+	const style = document.documentElement.style
+	style.setProperty('--bg', a.color)
+	style.setProperty('--fg', a.light ? '#222' : '#eee')
+	style.setProperty('--muted', a.light ? 'rgb(0 0 0 / 0.55)' : 'rgb(255 255 255 / 0.6)')
+})
+onBeforeUnmount(resetPageColors)
+
 function onKey(event: KeyboardEvent) {
 	if (event.altKey || event.ctrlKey || event.metaKey || event.target instanceof HTMLInputElement) return
 	if (event.key === 'ArrowLeft') go(previous.value)
@@ -123,12 +138,13 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 		</nav>
 		<p v-if="painting === null" class="muted">Painting not found.</p>
 		<template v-else-if="painting">
-			<div class="ambient" :style="{ '--ambient': ambient.get(painting.id) }">
+			<div class="wall">
 				<img
 					:key="painting.id"
 					:src="imageUrl(painting, 'normal')"
 					:alt="painting.title"
 					:class="{ magnifying }"
+					:style="{ borderRadius: cornerRadius(painting) }"
 					@load="measureAmbient(painting.id, $event.target as HTMLImageElement)"
 					@click="toggleMagnifier"
 					@pointermove="moveLens"
@@ -138,35 +154,41 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 			</div>
 			<div v-if="magnifying && lensStyle" class="lens" :style="lensStyle"></div>
 			<aside>
-				<h1>{{ painting.title || 'Untitled' }}</h1>
-				<p class="muted">{{ sizeLabel(painting) }}</p>
-				<p v-if="bought">Thank you for your purchase! We will contact you about pick-up or shipping.</p>
-				<template v-else-if="painting.status === 'available' && painting.price">
-					<p><strong>{{ formatPrice(painting.price) }}</strong></p>
-					<button :disabled="buying" @click="buy">Buy</button>
-					<p class="muted">Pick-up in Austria (free) or shipping, chosen at checkout.</p>
-				</template>
-				<p v-else class="muted">{{ painting.status === 'available' ? formatPrice(null) : painting.status }}</p>
-				<p v-if="error" class="error">{{ error }}</p>
+				<div>
+					<h1>{{ painting.title || 'Untitled' }}</h1>
+					<p class="muted">{{ sizeLabel(painting) }}</p>
+				</div>
+				<div>
+					<p v-if="bought">Thank you for your purchase! We will contact you about pick-up or shipping.</p>
+					<template v-else-if="painting.status === 'available' && painting.price">
+						<p class="actions">
+							<strong>{{ formatPrice(painting.price) }}</strong>
+							<button :disabled="buying" @click="buy">Buy</button>
+						</p>
+						<p class="muted">Pick-up in Austria (free) or shipping, chosen at checkout.</p>
+					</template>
+					<p v-else class="muted">{{ painting.status === 'available' ? formatPrice(null) : painting.status }}</p>
+					<p v-if="error" class="error">{{ error }}</p>
+				</div>
 			</aside>
 		</template>
 	</main>
 </template>
 
 <style>
+/* nav, painting and info always fit the viewport (minus #app's padding); the painting takes what is left */
 #painting {
 	display: flex;
 	flex-direction: column;
 	gap: var(--gap);
+	height: calc(100dvh - 2 * var(--gap));
 
 	& nav {
 		align-items: center;
 	}
 
-	& .ambient {
-		width: min(100%, 85dvh);
-		aspect-ratio: 1;
-		align-self: center;
+	& .wall {
+		flex: 1;
 		padding: min(3rem, 6vw);
 
 		& img {
@@ -176,6 +198,31 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 				cursor: zoom-out;
 				touch-action: none;
 			}
+		}
+	}
+
+	& aside {
+		display: flex;
+		flex-wrap: wrap;
+		justify-content: space-between;
+		gap: var(--gap);
+
+		& > div {
+			display: flex;
+			flex-direction: column;
+			gap: 0.3rem;
+
+			/* price and buying on the right */
+			&:last-child {
+				align-items: flex-end;
+				margin-left: auto;
+				text-align: right;
+			}
+		}
+
+		& p {
+			margin: 0;
+			align-items: center;
 		}
 	}
 

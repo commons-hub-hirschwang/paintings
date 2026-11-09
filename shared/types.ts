@@ -18,9 +18,9 @@ export type Painting = {
 	material: string | null
 }
 
-// "100 × 75 cm · Leinwand"
+// "≈ 100 × 75 cm · Leinwand" (sizes are measured from the photo)
 export const sizeLabel = (p: Pick<Painting, 'width_cm' | 'height_cm' | 'material'>) =>
-	[p.width_cm !== null && p.height_cm !== null ? `${p.width_cm} × ${p.height_cm} cm` : '', p.material ?? '']
+	[p.width_cm !== null && p.height_cm !== null ? `≈ ${p.width_cm} × ${p.height_cm} cm` : '', p.material ?? '']
 		.filter(Boolean)
 		.join(' · ')
 
