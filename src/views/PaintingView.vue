@@ -122,9 +122,10 @@ watchEffect(() => {
 })
 onBeforeUnmount(resetPageColors)
 
-// The painting is sized here, not by CSS: as large as it fits next to the info, with ‹ › beside it or centered below it
-// (wherever they take space the painting would not use anyway). Painting, buttons and info stay together, centered in the
-// space below the nav: no empty band between a width-limited painting and its info (phones).
+// The painting is sized here, not by CSS: as large as it fits next to the info and ‹ ›. Those are beside it on a wide
+// screen and below it on a tall one, whatever the painting's shape: they stay where they were while flipping. Painting,
+// buttons and info: centered together on a wide screen; on a tall one (phones) the painting in the middle, ‹ › and info at
+// the bottom.
 const content = ref<HTMLElement>()
 const wall = ref<HTMLElement>()
 const aside = ref<HTMLElement>()
@@ -156,11 +157,12 @@ const layout = computed(() => {
 	const height = contentSize.value.height - asideHeight.value - gap
 	// painting width when it fits into a box; never beyond the image's own size
 	const fit = (w: number, h: number) => Math.max(0, Math.min(w - padding, (h - padding) * ratio, natural.value.width || Infinity))
-	const beside = fit(width - 2 * (button.offsetWidth + gap), height)
-	const below = fit(width, height - button.offsetHeight - gap)
+	const mode = width > contentSize.value.height ? 'beside' : 'below'
 	// whole pixels: rounding must not push a button onto the next line
-	const imgWidth = Math.floor(Math.max(beside, below))
-	return { mode: beside > below ? 'beside' : 'below', img: { width: `${imgWidth}px`, height: `${imgWidth / ratio}px` } }
+	const imgWidth = Math.floor(
+		mode === 'beside' ? fit(width - 2 * (button.offsetWidth + gap), height) : fit(width, height - button.offsetHeight - gap),
+	)
+	return { mode, img: { width: `${imgWidth}px`, height: `${imgWidth / ratio}px` } }
 })
 
 // swipe (touch): the painting follows the finger; far enough flips to the neighbour, else it springs back. Towards an end
@@ -216,7 +218,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 		</nav>
 		<p v-if="painting === null" class="muted">Painting not found.</p>
 		<template v-else-if="painting">
-			<div ref="content" class="content">
+			<div ref="content" class="content" :class="layout.mode">
 			<div class="stage" :class="layout.mode">
 				<button class="previous" :disabled="!previous" title="previous (←)" @click="go(previous)">‹</button>
 				<div ref="wall" class="wall">
@@ -281,6 +283,12 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 		flex-direction: column;
 		justify-content: center;
 		gap: var(--gap);
+		position: relative;
+
+		/* tall screen: painting from the top, info and buying at the bottom */
+		&.below {
+			justify-content: space-between;
+		}
 	}
 
 	& .stage {
@@ -290,10 +298,43 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 		justify-content: center;
 		gap: var(--gap);
 
-		/* the painting on a line of its own, the buttons on the next one */
-		&.below .wall {
-			order: -1;
-			flex-basis: 100%;
+		/* at the sides, in the middle of the space below the nav: the same spot for every painting, so the mouse can rest
+		   on them while flipping (layout keeps their room free) */
+		&.beside > button {
+			position: absolute;
+			top: 50%;
+			translate: 0 -50%;
+
+			&.previous {
+				left: 0;
+			}
+
+			&.next {
+				right: 0;
+			}
+		}
+
+		/* the painting centered in all the room there is, the buttons at its bottom (above the info): the same spot for
+		   every painting */
+		&.below {
+			flex: 1;
+			min-height: 0;
+			display: grid;
+			grid-template-columns: 1fr auto auto 1fr;
+			grid-template-rows: minmax(0, 1fr) auto;
+
+			& .wall {
+				grid-area: 1 / 1 / 2 / -1;
+				place-self: center;
+			}
+
+			& .previous {
+				grid-area: 2 / 2;
+			}
+
+			& .next {
+				grid-area: 2 / 3;
+			}
 		}
 
 		& > button {
