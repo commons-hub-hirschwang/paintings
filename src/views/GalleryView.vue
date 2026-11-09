@@ -1,24 +1,30 @@
 <script setup lang="ts">
-import { ref } from 'vue'
 import { RouterLink } from 'vue-router'
-import { fetchPaintings, formatPrice, imageUrl, type PublicPainting } from '@/api'
+import { formatPrice, imageUrl, loadPaintings, paintings } from '@/api'
+import { ambient, measureAmbient } from '@/ambient'
 import { sizeLabel } from '../../shared/types'
 
-const paintings = ref<PublicPainting[]>([])
-fetchPaintings().then((list) => (paintings.value = list))
+loadPaintings()
 </script>
 
 <template>
 	<main id="gallery">
-		<p v-if="!paintings.length" class="muted">No paintings yet.</p>
+		<p v-if="paintings?.length === 0" class="muted">No paintings yet.</p>
 		<RouterLink v-for="painting in paintings" :key="painting.id" :to="`/p/${painting.id}`">
 			<figure>
-			<img :src="imageUrl(painting, 'thumb')" :alt="painting.title" loading="lazy" />
-			<figcaption>
-				{{ painting.title || 'Untitled' }}
-				<span class="muted">{{ sizeLabel(painting) }}</span>
-				<span>{{ painting.status === 'available' ? formatPrice(painting.price) : painting.status }}</span>
-			</figcaption>
+				<div class="ambient" :style="{ '--ambient': ambient.get(painting.id) }">
+					<img
+						:src="imageUrl(painting, 'thumb')"
+						:alt="painting.title"
+						loading="lazy"
+						@load="measureAmbient(painting.id, $event.target as HTMLImageElement)"
+					/>
+				</div>
+				<figcaption>
+					{{ painting.title || 'Untitled' }}
+					<span class="muted">{{ sizeLabel(painting) }}</span>
+					<span>{{ painting.status === 'available' ? formatPrice(painting.price) : painting.status }}</span>
+				</figcaption>
 			</figure>
 		</RouterLink>
 	</main>
@@ -37,10 +43,9 @@ fetchPaintings().then((list) => (paintings.value = list))
 	& figure {
 		margin: 0;
 
-		& img {
-			width: 100%;
+		& .ambient {
 			aspect-ratio: 1;
-			object-fit: contain;
+			padding: 12%;
 		}
 
 		& figcaption {

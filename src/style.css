@@ -130,3 +130,22 @@ fieldset {
 		font-weight: bold;
 	}
 }
+
+/* a painting glowing in its own average color (--ambient, set inline): strong in the middle, fading to the sides; the
+   painting casts a shadow onto it, keeps its aspect ratio and is centered in the box */
+.ambient {
+	--ambient: color-mix(in srgb, var(--muted) 40%, transparent);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	min-width: 0;
+	min-height: 0;
+	background: radial-gradient(closest-side, var(--ambient) 30%, color-mix(in srgb, var(--ambient) 10%, transparent));
+
+	& img {
+		display: block;
+		max-width: 100%;
+		max-height: 100%;
+		box-shadow: 0 0.3rem 1.2rem #000;
+	}
+}
