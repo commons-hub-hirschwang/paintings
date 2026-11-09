@@ -10,10 +10,10 @@
     "build-only": "vite build",
     "type-check": "vue-tsc --build",
     "cf-typegen": "wrangler types",
-    "deploy": "CLOUDFLARE_ENV=commons pnpm build && wrangler deploy",
+    "deploy": "test \"$(git branch --show-current)\" = main && test -z \"$(git status --porcelain)\" || { echo 'deploy: only from main with everything committed'; exit 1; } && pnpm db:migrate:commons && CLOUDFLARE_ENV=commons pnpm build && wrangler deploy",
     "images:regen": "tsx scripts/regen-variants.ts",
     "db:migrate": "wrangler d1 migrations apply DB --local",
-    "db:migrate:commons": "wrangler d1 migrations apply DB --remote --env commons",
+    "db:migrate:commons": "CLOUDFLARE_ACCOUNT_ID=05cb64c47a8cb62832b428eb832bea0c wrangler d1 migrations apply DB --remote --env commons",
     "sync": "tsx scripts/sync.ts",
     "capture": "tsx watch --clear-screen=false bridge/server.ts",
     "video": "tsx scripts/video.ts"
