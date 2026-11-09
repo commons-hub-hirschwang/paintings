@@ -9,6 +9,8 @@ export type Painting = {
 	height_cm: number | null
 	status: PaintingStatus
 	variants_version: string | null
+	// average colour "#rrggbb" of the painting, the wall it hangs on; null: not measured yet
+	color: string | null
 	created_at: number
 	// stack (just a name) + # identify a painting: "Keller #3". Assigned by the gallery at upload; the # only changes when
 	// the painting changes stack. Null: from before stacks, and hidden from the public

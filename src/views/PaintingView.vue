@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch, watchEffect } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { formatPrice, imageUrl, loadPaintings, paintings } from '@/api'
-import { ambient, cornerRadius, measureAmbient } from '@/ambient'
+import { cornerRadius, measureAmbient, wallColors } from '@/ambient'
 import { sizeLabel } from '../../shared/types'
 
 const route = useRoute()
@@ -61,6 +61,7 @@ function moveLens(event: MouseEvent) {
 }
 
 function toggleMagnifier(event: MouseEvent) {
+	if (swiped) return (swiped = false)
 	magnifying.value = !magnifying.value
 	if (magnifying.value) moveLens(event)
 	else lens.value = undefined
@@ -115,14 +116,86 @@ function resetPageColors() {
 	for (const name of pageColors) document.documentElement.style.removeProperty(name)
 }
 watchEffect(() => {
-	const a = painting.value && ambient.get(painting.value.id)
-	if (!a) return resetPageColors()
-	const style = document.documentElement.style
-	style.setProperty('--bg', a.color)
-	style.setProperty('--fg', a.light ? '#222' : '#eee')
-	style.setProperty('--muted', a.light ? 'rgb(0 0 0 / 0.55)' : 'rgb(255 255 255 / 0.6)')
+	const colors = painting.value && wallColors(painting.value.id, painting.value.color)
+	if (!colors) return resetPageColors()
+	for (const [name, value] of Object.entries(colors)) document.documentElement.style.setProperty(name, value)
 })
 onBeforeUnmount(resetPageColors)
+
+// The painting is sized here, not by CSS: as large as it fits next to the info, with ‹ › beside it or centered below it
+// (wherever they take space the painting would not use anyway). Painting, buttons and info stay together, centered in the
+// space below the nav: no empty band between a width-limited painting and its info (phones).
+const content = ref<HTMLElement>()
+const wall = ref<HTMLElement>()
+const aside = ref<HTMLElement>()
+const contentSize = ref({ width: 0, height: 0 })
+const asideHeight = ref(0)
+const natural = ref({ width: 0, height: 0 })
+const observer = new ResizeObserver((entries) => {
+	for (const { target, contentRect } of entries) {
+		if (target === content.value) contentSize.value = { width: contentRect.width, height: contentRect.height }
+		else asideHeight.value = contentRect.height
+	}
+})
+for (const element of [content, aside])
+	watch(element, (now, old) => {
+		if (old) observer.unobserve(old)
+		if (now) observer.observe(now)
+	})
+onBeforeUnmount(() => observer.disconnect())
+// the next painting's own size, once its image is there
+watch(() => painting.value?.id, () => (natural.value = { width: 0, height: 0 }))
+const layout = computed(() => {
+	const p = painting.value
+	const button = content.value?.querySelector('button')
+	if (!p || !button || !wall.value || !contentSize.value.height) return { mode: 'below', img: undefined }
+	const ratio = p.width_cm && p.height_cm ? p.width_cm / p.height_cm : natural.value.width / natural.value.height || 1
+	const gap = parseFloat(getComputedStyle(content.value!).rowGap) || 0
+	const padding = 2 * parseFloat(getComputedStyle(wall.value).paddingLeft)
+	const width = contentSize.value.width
+	const height = contentSize.value.height - asideHeight.value - gap
+	// painting width when it fits into a box; never beyond the image's own size
+	const fit = (w: number, h: number) => Math.max(0, Math.min(w - padding, (h - padding) * ratio, natural.value.width || Infinity))
+	const beside = fit(width - 2 * (button.offsetWidth + gap), height)
+	const below = fit(width, height - button.offsetHeight - gap)
+	// whole pixels: rounding must not push a button onto the next line
+	const imgWidth = Math.floor(Math.max(beside, below))
+	return { mode: beside > below ? 'beside' : 'below', img: { width: `${imgWidth}px`, height: `${imgWidth / ratio}px` } }
+})
+
+// swipe (touch): the painting follows the finger; far enough flips to the neighbour, else it springs back. Towards an end
+// of the list it only moves reluctantly.
+const swipe = ref<{ pointer: number; x: number; dx: number }>()
+// a swipe ends in a click on the painting: not a magnifier toggle
+let swiped = false
+function swipeStart(event: PointerEvent) {
+	if (event.pointerType !== 'touch' || magnifying.value || swipe.value) return
+	swiped = false
+	swipe.value = { pointer: event.pointerId, x: event.clientX, dx: 0 }
+}
+function swipeMove(event: PointerEvent) {
+	const s = swipe.value
+	if (event.pointerId !== s?.pointer) return
+	const dx = event.clientX - s.x
+	s.dx = (dx > 0 ? previous.value : next.value) ? dx : dx / 3
+	if (Math.abs(dx) > 10) swiped = true
+}
+// pointercancel: the browser took over (a vertical scroll), back to the middle
+function swipeEnd(event: PointerEvent) {
+	const s = swipe.value
+	if (event.pointerId !== s?.pointer) return
+	swipe.value = undefined
+	if (event.type === 'pointerup' && Math.abs(s.dx) > Math.min(80, innerWidth / 5)) go(s.dx > 0 ? previous.value : next.value)
+}
+const swipeStyle = computed(() =>
+	swipe.value ? { transform: `translateX(${swipe.value.dx}px)`, transition: 'none' } : { transform: 'none', transition: 'transform 0.2s' },
+)
+
+function onLoad(event: Event) {
+	const img = event.target as HTMLImageElement
+	measureAmbient(painting.value!.id, img)
+	natural.value = { width: img.naturalWidth, height: img.naturalHeight }
+}
 
 function onKey(event: KeyboardEvent) {
 	if (event.altKey || event.ctrlKey || event.metaKey || event.target instanceof HTMLInputElement) return
@@ -138,33 +211,38 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 
 <template>
 	<main id="painting">
-		<nav class="actions">
+		<nav>
 			<a href="/" @click.prevent="backToGallery">← Gallery</a>
-			<button :disabled="!previous" title="previous (←)" @click="go(previous)">‹</button>
-			<button :disabled="!next" title="next (→)" @click="go(next)">›</button>
 		</nav>
 		<p v-if="painting === null" class="muted">Painting not found.</p>
 		<template v-else-if="painting">
-			<div class="wall">
+			<div ref="content" class="content">
+			<div class="stage" :class="layout.mode">
+				<button class="previous" :disabled="!previous" title="previous (←)" @click="go(previous)">‹</button>
+				<div ref="wall" class="wall">
 				<img
 					:key="painting.id"
 					:src="imageUrl(painting, 'normal')"
 					:alt="painting.title"
 					:class="{ magnifying }"
-					:style="{ borderRadius: cornerRadius(painting) }"
-					@load="measureAmbient(painting.id, $event.target as HTMLImageElement)"
+					:style="{ borderRadius: cornerRadius(painting.width_cm, painting.height_cm), ...layout.img, ...swipeStyle }"
+					@load="onLoad"
 					@click="toggleMagnifier"
-					@pointermove="moveLens"
-					@pointerdown="moveLens"
+					@pointermove="moveLens($event), swipeMove($event)"
+					@pointerdown="moveLens($event), swipeStart($event)"
+					@pointerup="swipeEnd"
+					@pointercancel="swipeEnd"
 					@pointerleave="lens = undefined"
 				/>
+				</div>
+				<button class="next" :disabled="!next" title="next (→)" @click="go(next)">›</button>
 			</div>
 			<div v-if="magnifying && lensStyle" class="lens" :style="lensStyle">
 				<!-- normal image until the detail one (on top) has loaded -->
 				<img :src="imageUrl(painting, 'normal')" alt="" :style="lensContentStyle" />
 				<img :src="imageUrl(painting, 'detail')" alt="" :style="lensContentStyle" />
 			</div>
-			<aside>
+			<aside ref="aside">
 				<div>
 					<h1>{{ painting.title || 'Untitled' }}</h1>
 					<p class="muted">{{ sizeLabel(painting) }}</p>
@@ -182,6 +260,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 					<p v-if="error" class="error">{{ error }}</p>
 				</div>
 			</aside>
+			</div>
 		</template>
 	</main>
 </template>
@@ -194,16 +273,43 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 	gap: var(--gap);
 	height: calc(100dvh - 2 * var(--gap));
 
-	& nav {
+	/* below the nav: painting, ‹ › and info, centered together; the painting's size is set by the script (layout) */
+	& .content {
+		flex: 1;
+		min-height: 0;
+		display: flex;
+		flex-direction: column;
+		justify-content: center;
+		gap: var(--gap);
+	}
+
+	& .stage {
+		display: flex;
+		flex-wrap: wrap;
 		align-items: center;
+		justify-content: center;
+		gap: var(--gap);
+
+		/* the painting on a line of its own, the buttons on the next one */
+		&.below .wall {
+			order: -1;
+			flex-basis: 100%;
+		}
+
+		& > button {
+			font-size: 1.5rem;
+			line-height: 1;
+			padding: 0.4rem 0.9rem;
+		}
 	}
 
 	& .wall {
-		flex: 1;
 		padding: min(3rem, 6vw);
 
 		& img {
 			cursor: zoom-in;
+			/* horizontal moves are swipes (handled here), vertical ones scroll */
+			touch-action: pan-y pinch-zoom;
 
 			&.magnifying {
 				cursor: zoom-out;

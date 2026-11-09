@@ -15,7 +15,7 @@ const laptop = (key: string) => `upload key "${key}"`
 capture.get('/me', (c) => c.json({ key: c.get('uploadKey') }))
 
 capture.get('/paintings', async (c) => {
-	const { results } = await c.env.DB.prepare(`SELECT id, title, variants_version FROM paintings ORDER BY created_at`).all<Painting>()
+	const { results } = await c.env.DB.prepare(`SELECT id, title, variants_version, color FROM paintings ORDER BY created_at`).all<Painting>()
 	return c.json(results)
 })
 
@@ -53,11 +53,22 @@ capture.put('/paintings/:id', async (c) => {
 	return meta.changes ? c.json({ ok: true }) : c.notFound()
 })
 
+const isColor = (color: unknown): color is string => typeof color === 'string' && /^#[0-9a-f]{6}$/.test(color)
+
+// new web images, with their average colour (laptops from before colours: kept as it was)
 capture.put('/paintings/:id/variants-version', async (c) => {
-	const { variants_version } = await c.req.json<{ variants_version: string }>()
-	const { meta } = await c.env.DB.prepare(`UPDATE paintings SET variants_version = ? WHERE id = ?`)
-		.bind(variants_version, c.req.param('id'))
+	const { variants_version, color } = await c.req.json<{ variants_version: string; color?: string }>()
+	const { meta } = await c.env.DB.prepare(`UPDATE paintings SET variants_version = ?, color = COALESCE(?, color) WHERE id = ?`)
+		.bind(variants_version, isColor(color) ? color : null, c.req.param('id'))
 		.run()
+	return meta.changes ? c.json({ ok: true }) : c.notFound()
+})
+
+// the average colour alone, for paintings uploaded before colours were stored (pnpm images:colors)
+capture.put('/paintings/:id/color', async (c) => {
+	const { color } = await c.req.json<{ color: string }>()
+	if (!isColor(color)) return c.json({ error: 'color must be #rrggbb' }, 400)
+	const { meta } = await c.env.DB.prepare(`UPDATE paintings SET color = ? WHERE id = ?`).bind(color, c.req.param('id')).run()
 	return meta.changes ? c.json({ ok: true }) : c.notFound()
 })
 

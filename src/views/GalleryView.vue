@@ -1,15 +1,9 @@
 <script setup lang="ts">
 import { RouterLink } from 'vue-router'
-import { formatPrice, imageUrl, loadPaintings, paintings, type PublicPainting } from '@/api'
-import { ambient, cornerRadius, measureAmbient } from '@/ambient'
+import { formatPrice, imageUrl, loadPaintings, paintings } from '@/api'
+import { cornerRadius, measureAmbient, wallColors } from '@/ambient'
 
 loadPaintings()
-
-// each tile is a piece of wall in its painting's average color, with text in contrast to it
-function tileStyle(painting: PublicPainting) {
-	const a = ambient.get(painting.id)
-	return a && { background: a.color, color: a.light ? '#222' : '#eee' }
-}
 </script>
 
 <template>
@@ -17,12 +11,12 @@ function tileStyle(painting: PublicPainting) {
 		<p class="name">Thomas Fritsch – Digitale Gallerie an der Rax</p>
 		<p v-if="paintings?.length === 0" class="muted">No paintings yet.</p>
 		<div class="tiles">
-			<RouterLink v-for="painting in paintings" :key="painting.id" :to="`/p/${painting.id}`" :style="tileStyle(painting)">
+			<RouterLink v-for="painting in paintings" :key="painting.id" :to="`/p/${painting.id}`" :style="wallColors(painting.id, painting.color)">
 				<div class="wall">
 					<img
 						:src="imageUrl(painting, 'thumb')"
 						:alt="painting.title"
-						:style="{ borderRadius: cornerRadius(painting) }"
+						:style="{ borderRadius: cornerRadius(painting.width_cm, painting.height_cm) }"
 						loading="lazy"
 						@load="measureAmbient(painting.id, $event.target as HTMLImageElement)"
 					/>
@@ -56,11 +50,18 @@ function tileStyle(painting: PublicPainting) {
 			aspect-ratio: 1;
 			padding: calc(1.5 * var(--gap));
 			text-decoration: none;
-			background: color-mix(in srgb, var(--muted) 20%, transparent);
+			/* a piece of wall in its painting's color (set per tile), text in contrast to it */
+			background: var(--bg);
+			color: var(--fg);
 			transition: background 0.4s;
 
 			& .wall {
 				flex: 1;
+
+				/* small paintings: a tighter shadow than the single view's */
+				& img {
+					box-shadow: 0 0.15rem 0.5rem #000;
+				}
 			}
 
 			& p {

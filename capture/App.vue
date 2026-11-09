@@ -4,6 +4,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import ColorCalibration from './ColorCalibration.vue'
 import CornerEditor from './CornerEditor.vue'
 import { bridge, type Bow, type BridgeStatus, type Detection, type LocalPainting, type Photo, type SyncProgress } from './bridge'
+import { cornerRadius, measureAmbient, wallColors } from '../src/ambient'
 import { estimateSizeCm, MAX_BOW, reconstruct, turnCorners, type Camera, type Quad } from '../shared/geometry'
 
 const confirmedKey = () => `capture:calibration-confirmed:${status.value?.project}`
@@ -534,12 +535,21 @@ const cm = (value: number) => value.toFixed(1)
 					:key="painting.id"
 					type="button"
 					:class="{ current: editing?.id === painting.id }"
+					:style="wallColors(bridge.thumbUrl(painting))"
 					:disabled="!!busy || !painting.original || (!!photo && !editing)"
 					:title="painting.rendering ? 'Being finished' : painting.original ? 'Change this painting' : 'Saved without its photo data: cannot be changed'"
 					@click="openPainting(painting)"
 				>
 					<span v-if="painting.rendering" class="pending muted">{{ painting.rendering.error ? 'Failed' : 'Rendering…' }}</span>
-					<img v-else :src="bridge.thumbUrl(painting)" :alt="painting.title" />
+					<!-- measured per thumb version: a changed painting gets its new color -->
+					<div v-else class="wall">
+						<img
+							:src="bridge.thumbUrl(painting)"
+							:alt="painting.title"
+							:style="{ borderRadius: cornerRadius(painting.widthCm, painting.heightCm) }"
+							@load="measureAmbient(bridge.thumbUrl(painting), $event.target as HTMLImageElement)"
+						/>
+					</div>
 					<span class="caption">
 						<span><strong>{{ painting.stack }}</strong> {{ painting.title || 'Untitled' }}</span>
 						<span class="muted">
@@ -731,16 +741,19 @@ const cm = (value: number) => value.toFixed(1)
 		}
 	}
 
+	/* like the gallery: tiles side by side without gaps, each a piece of wall in its painting's color */
 	& .saved {
 		display: grid;
 		grid-template-columns: repeat(auto-fill, minmax(var(--icon-size), 1fr));
-		gap: var(--gap);
+		/* the fieldset's own gap: none, the walls meet */
+		gap: 0;
 
 		& .icon-size {
 			grid-column: 1 / -1;
 			display: flex;
 			align-items: center;
 			gap: var(--gap);
+			margin-bottom: var(--gap);
 		}
 
 		&.compact .caption {
@@ -748,20 +761,31 @@ const cm = (value: number) => value.toFixed(1)
 		}
 
 		& > button {
-			padding: 0.25rem;
-			border-color: transparent;
+			display: flex;
+			flex-direction: column;
+			gap: var(--gap);
+			padding: calc(0.12 * var(--icon-size));
+			border: none;
+			border-radius: 0;
+			background: var(--bg);
+			color: var(--fg);
 			text-align: left;
+			transition: background 0.4s;
 
 			&.current {
-				border-color: var(--fg);
+				outline: 2px solid var(--fg);
+				outline-offset: -2px;
 			}
 		}
 
-		& img,
+		& .wall,
 		& .pending {
 			width: 100%;
 			aspect-ratio: 1;
-			object-fit: contain;
+		}
+
+		& .wall img {
+			box-shadow: 0 0.15rem 0.5rem #000;
 		}
 
 		& .pending {

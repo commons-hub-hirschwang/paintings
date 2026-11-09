@@ -67,6 +67,7 @@ only stores the web variants (`detail` 2560/q80, `normal` 1280/q75, `thumb` 384/
 ```sh
 pnpm images:regen           # paintings of the current project whose variants are outdated (config version changed)
 pnpm images:regen --force   # all
+pnpm images:colors          # average colours of paintings uploaded before colours were stored
 ```
 
 Regeneration reads the archives on this laptop and uses the gallery URL + upload key from the capture settings (`captures/settings.json`).

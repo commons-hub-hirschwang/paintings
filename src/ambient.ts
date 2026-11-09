@@ -1,5 +1,4 @@
 import { reactive } from 'vue'
-import type { Painting } from '../shared/types'
 
 // average color of each painting (by id), measured from whichever of its images loads first; light: dark text on it
 export const ambient = reactive(new Map<string, { color: string; light: boolean }>())
@@ -30,7 +29,26 @@ export function measureAmbient(id: string, img: HTMLImageElement) {
 	})
 }
 
+// the color stored with the painting ("#rrggbb"): there before the image has loaded
+const fromHex = (hex: string) => {
+	const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)) as [number, number, number]
+	return { color: hex, light: 0.2126 * r + 0.7152 * g + 0.0722 * b > 140 }
+}
+
+// a wall in a painting's average color (stored, else measured in the browser): page colors (--bg, --fg, --muted) for an
+// element or the whole page, text in contrast to it; nothing while the painting is not measured yet
+export function wallColors(id: string, stored?: string | null): Record<string, string> | undefined {
+	const a = stored ? fromHex(stored) : ambient.get(id)
+	return (
+		a && {
+			'--bg': a.color,
+			'--fg': a.light ? '#222' : '#eee',
+			'--muted': a.light ? 'rgb(0 0 0 / 0.55)' : 'rgb(255 255 255 / 0.6)',
+		}
+	)
+}
+
 // 0.5 cm rounded off the real painting's corners (hides black rectification corners), as % of the image box per axis
 const cornerCm = 0.5
-export const cornerRadius = (p: Pick<Painting, 'width_cm' | 'height_cm'>) =>
-	p.width_cm && p.height_cm ? `${(100 * cornerCm) / p.width_cm}% / ${(100 * cornerCm) / p.height_cm}%` : '0.1rem'
+export const cornerRadius = (widthCm: number | null | undefined, heightCm: number | null | undefined) =>
+	widthCm && heightCm ? `${(100 * cornerCm) / widthCm}% / ${(100 * cornerCm) / heightCm}%` : '0.1rem'
