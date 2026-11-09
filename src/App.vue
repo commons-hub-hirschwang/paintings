@@ -1,8 +1,21 @@
 <script setup lang="ts">
-import { RouterView } from 'vue-router'
+import { computed } from 'vue'
+import { RouterLink, RouterView, useRoute } from 'vue-router'
 import { loadUser, logout, user } from './auth'
 
 loadUser()
+const route = useRoute()
+
+// the other pages this user can open (every role rates); the gallery from /admin and /rate (paintings have their own link)
+const pages = computed(() => {
+	if (!user.value) return []
+	const all = [
+		{ to: '/', label: 'gallery', show: route.name === 'admin' || route.name === 'rate' },
+		{ to: '/admin', label: 'admin', show: user.value.role === 'admin' && route.name !== 'admin' },
+		{ to: '/rate', label: 'rate', show: route.name !== 'rate' },
+	]
+	return all.filter((page) => page.show)
+})
 </script>
 
 <template>
@@ -14,6 +27,9 @@ loadUser()
 		</span>
 		<span v-else class="muted">gast</span>
 	</header>
+	<nav v-if="pages.length" id="pages" class="muted">
+		<RouterLink v-for="page in pages" :key="page.to" :to="page.to">{{ page.label }}</RouterLink>
+	</nav>
 	<RouterView />
 </template>
 
@@ -30,6 +46,20 @@ loadUser()
 	right: calc(var(--gap) - 0.6rem); /* text, not the padded box, on the edge */
 	top: var(--gap);
 	z-index: 1;
+	padding: 0.2rem 0.6rem;
+	border-radius: 0.3rem;
+	background: var(--bg);
+}
+
+/* links to the other pages, top center (like #nav: no layout space) */
+#pages {
+	position: absolute;
+	top: var(--gap);
+	left: 50%;
+	translate: -50% 0;
+	z-index: 1;
+	display: flex;
+	gap: var(--gap);
 	padding: 0.2rem 0.6rem;
 	border-radius: 0.3rem;
 	background: var(--bg);
