@@ -54,3 +54,13 @@ export type PaintingLogEntry = {
 	stack: string | null
 	number: number | null
 }
+
+// Stripe setup as /admin shows it (never the secrets themselves); 'secret': from the STRIPE_SECRET_KEY wrangler secret
+export type StripeStatus = {
+	connected: boolean
+	source: 'admin' | 'secret' | null
+	mode: 'test' | 'live' | null
+	account: string | null
+	webhook: boolean
+	webhookUrl: string | null
+}

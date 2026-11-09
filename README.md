@@ -82,4 +82,6 @@ pnpm db:migrate:commons
 pnpm wrangler secret put USERS --env commons     # "name:password[:admin],…" (others: rater)
 ```
 
+Payments: on `/admin` → Price & payments, paste the Stripe secret key; the webhook is created at Stripe automatically.
+
 Then `pnpm run deploy` (only from `main` with everything committed; applies pending migrations first).

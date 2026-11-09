@@ -158,6 +158,11 @@ onBeforeUnmount(() => clearInterval(live))
 		}
 	}
 
+	& .payments input {
+		flex: 1;
+		min-width: 16rem;
+	}
+
 	& .pricing {
 		& textarea {
 			font-family: monospace;

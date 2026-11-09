@@ -1,4 +1,4 @@
-// Buying via Stripe Checkout (plain REST, no SDK). Secrets: STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET.
+// Buying via Stripe Checkout (set up on /admin, see server/stripe.ts).
 // Flow: reserve painting → Checkout session (expires in 30 min) → webhook: completed → sold, expired → available.
 import { Hono } from 'hono'
 import { shipping, shippingOptions } from '../../shared/shipping'
@@ -6,26 +6,16 @@ import type { Painting } from '../../shared/types'
 import type { Env } from '../auth'
 import { changePaintings } from '../log'
 import { getPriceFunction } from '../settings'
+import { getStripe, stripeApi } from '../stripe'
 
-type ShopEnv = Env & { Bindings: Env['Bindings'] & { STRIPE_SECRET_KEY: string; STRIPE_WEBHOOK_SECRET: string } }
-const shop = new Hono<ShopEnv>()
+const shop = new Hono<Env>()
 
 // how the shop's own status changes show up in the log
 const SHOP = 'shop'
 
-async function stripe(key: string, path: string, params: Record<string, string | number>) {
-	const response = await fetch(`https://api.stripe.com/v1/${path}`, {
-		method: 'POST',
-		headers: { authorization: `Bearer ${key}`, 'content-type': 'application/x-www-form-urlencoded' },
-		body: new URLSearchParams(Object.entries(params).map(([k, v]) => [k, String(v)])),
-	})
-	const body = (await response.json()) as { url?: string; error?: { message: string } }
-	if (!response.ok) throw new Error(body.error?.message ?? `stripe ${response.status}`)
-	return body
-}
-
 shop.post('/checkout/:id', async (c) => {
-	if (!c.env.STRIPE_SECRET_KEY) return c.json({ error: 'shop not configured yet' }, 503)
+	const stripe = await getStripe(c.env.DB, c.env)
+	if (!stripe) return c.json({ error: 'shop not configured yet' }, 503)
 	const id = c.req.param('id')
 	const painting = await c.env.DB.prepare(
 		`SELECT p.*, (SELECT AVG(score) FROM ratings WHERE painting_id = p.id) AS rating FROM paintings p WHERE id = ? AND deleted_at IS NULL`,
@@ -64,7 +54,7 @@ shop.post('/checkout/:id', async (c) => {
 	shipping.countries.forEach((country, i) => (params[`shipping_address_collection[allowed_countries][${i}]`] = country))
 
 	try {
-		const session = await stripe(c.env.STRIPE_SECRET_KEY, 'checkout/sessions', params)
+		const session = await stripeApi<{ url: string }>(stripe.key, 'POST', 'checkout/sessions', params)
 		return c.json({ url: session.url })
 	} catch (error) {
 		await changePaintings(c.env.DB, SHOP, c.env.DB.prepare(`UPDATE paintings SET status = 'available' WHERE id = ? AND status = 'reserved'`).bind(id))
@@ -84,7 +74,8 @@ async function verifySignature(payload: string, header: string, secret: string) 
 // Stripe webhook: events checkout.session.completed and checkout.session.expired
 shop.post('/stripe/webhook', async (c) => {
 	const payload = await c.req.text()
-	if (!(await verifySignature(payload, c.req.header('stripe-signature') ?? '', c.env.STRIPE_WEBHOOK_SECRET ?? '')))
+	const secret = (await getStripe(c.env.DB, c.env))?.webhookSecret
+	if (!secret || !(await verifySignature(payload, c.req.header('stripe-signature') ?? '', secret)))
 		return c.json({ error: 'invalid signature' }, 400)
 	const event = JSON.parse(payload) as { type: string; data: { object: { metadata?: { painting_id?: string } } } }
 	const id = event.data.object.metadata?.painting_id

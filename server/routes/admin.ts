@@ -4,7 +4,8 @@ import { defaultPriceFormula, priceExamples, priceFunction } from '../../shared/
 import { paintingStatuses, type AdminPainting, type Painting, type PaintingLogEntry, type UploadKey } from '../../shared/types'
 import { requireRole, sha256, type Env } from '../auth'
 import { changePaintings } from '../log'
-import { getPriceFormula, getPriceFunction } from '../settings'
+import { getPriceFormula, getPriceFunction, putSetting } from '../settings'
+import { connectStripe, disconnectStripe, stripeStatus } from '../stripe'
 import { cleanStackName, nextNumberSql, stackIndexSql } from '../stacks'
 
 const admin = new Hono<Env>()
@@ -21,8 +22,24 @@ admin.get('/paintings', async (c) => {
 })
 
 admin.get('/pricing', async (c) =>
-	c.json({ formula: await getPriceFormula(c.env.DB), default: defaultPriceFormula, stripe: !!c.env.STRIPE_SECRET_KEY, webhook: !!c.env.STRIPE_WEBHOOK_SECRET }),
+	c.json({ formula: await getPriceFormula(c.env.DB), default: defaultPriceFormula, stripe: await stripeStatus(c.env.DB, c.env) }),
 )
+
+// interactive Stripe setup: paste the secret key, the webhook is created at Stripe
+admin.put('/stripe', async (c) => {
+	const { key } = await c.req.json<{ key: string }>()
+	try {
+		const note = await connectStripe(c.env.DB, key ?? '', new URL(c.req.url).origin, c.get('user').name)
+		return c.json({ ok: true, note })
+	} catch (error) {
+		return c.json({ error: (error as Error).message }, 400)
+	}
+})
+
+admin.delete('/stripe', async (c) => {
+	await disconnectStripe(c.env.DB)
+	return c.json({ ok: true })
+})
 
 // validated before saving: must parse and give a price for the examples
 admin.put('/pricing', async (c) => {
@@ -35,12 +52,7 @@ admin.put('/pricing', async (c) => {
 		if (error instanceof FormulaError) return c.json({ error: error.message }, 400)
 		throw error
 	}
-	await c.env.DB.prepare(
-		`INSERT INTO settings (key, value, updated_by) VALUES ('price_formula', ?, ?)
-		 ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_by = excluded.updated_by, updated_at = unixepoch()`,
-	)
-		.bind(formula.trim(), c.get('user').name)
-		.run()
+	await putSetting(c.env.DB, 'price_formula', formula.trim(), c.get('user').name)
 	return c.json({ ok: true })
 })
 

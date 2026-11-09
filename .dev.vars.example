@@ -3,5 +3,6 @@
 # local only, never set in production: log in with just a name
 ALLOW_EMPTY_PASSWORDS=true
 USERS=admin::admin,author::author,rater,guest
-# Stripe (test mode): STRIPE_SECRET_KEY=sk_test_…
+# Stripe: connect a test key on /admin; webhooks locally via `stripe listen --forward-to localhost:5173/api/stripe/webhook`,
+# whose signing secret goes here
 STRIPE_WEBHOOK_SECRET=

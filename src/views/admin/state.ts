@@ -1,7 +1,7 @@
 // What the tabs of /admin share: the paintings, kept up to date, and the price formula being edited (the table previews it).
 import { computed, ref } from 'vue'
 import { authed } from '@/auth'
-import type { AdminPainting } from '../../../shared/types'
+import type { AdminPainting, StripeStatus } from '../../../shared/types'
 import { priceFunction, type PriceFn } from '../../../shared/pricing'
 
 export const paintings = ref<AdminPainting[]>([])
@@ -10,8 +10,8 @@ export const error = ref('')
 export const namedStacks = computed(() => [...new Set(paintings.value.map((p) => p.stack ?? ''))].filter(Boolean))
 export const stackPaintings = (stack: string) => paintings.value.filter((p) => p.stack === stack && p.deleted_at === null)
 
-export type Pricing = { formula: string; default: string; stripe: boolean; webhook: boolean }
-export const pricing = ref<Pricing>({ formula: '', default: '', stripe: false, webhook: false })
+export type Pricing = { formula: string; default: string; stripe: StripeStatus | null }
+export const pricing = ref<Pricing>({ formula: '', default: '', stripe: null })
 export const formula = ref('')
 export const preview = computed<{ price: PriceFn | null; error: string }>(() => {
 	try {
