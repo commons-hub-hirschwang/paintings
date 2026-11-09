@@ -20,7 +20,13 @@ const previous = computed(() => (index.value > 0 ? paintings.value![index.value 
 const next = computed(() => (index.value >= 0 ? paintings.value![index.value + 1] : undefined))
 
 // replace: browser back always returns to the gallery, however many paintings were flipped through
-const go = (to: { id: string } | undefined) => to && router.replace(`/p/${to.id}`)
+// the next painting slides in from the right, the previous one from the left: like walking along the wall
+const slide = ref<'from-right' | 'from-left'>()
+function go(to: { id: string } | undefined, direction: 1 | -1) {
+	if (!to) return
+	slide.value = direction > 0 ? 'from-right' : 'from-left'
+	router.replace(`/p/${to.id}`)
+}
 
 
 async function buy() {
@@ -183,7 +189,7 @@ function swipeEnd(event: PointerEvent) {
 	const s = swipe.value
 	if (event.pointerId !== s?.pointer) return
 	swipe.value = undefined
-	if (event.type === 'pointerup' && Math.abs(s.dx) > Math.min(80, innerWidth / 5)) go(s.dx > 0 ? previous.value : next.value)
+	if (event.type === 'pointerup' && Math.abs(s.dx) > Math.min(80, innerWidth / 5)) s.dx > 0 ? go(previous.value, -1) : go(next.value, 1)
 }
 const swipeStyle = computed(() =>
 	swipe.value ? { transform: `translateX(${swipe.value.dx}px)`, transition: 'none' } : { transform: 'none', transition: 'transform 0.2s' },
@@ -197,8 +203,8 @@ function onLoad(event: Event) {
 
 function onKey(event: KeyboardEvent) {
 	if (event.altKey || event.ctrlKey || event.metaKey || event.target instanceof HTMLInputElement) return
-	if (event.key === 'ArrowLeft') go(previous.value)
-	else if (event.key === 'ArrowRight') go(next.value)
+	if (event.key === 'ArrowLeft') go(previous.value, -1)
+	else if (event.key === 'ArrowRight') go(next.value, 1)
 	else if (event.key === 'Escape') magnifying.value = false
 	else return
 	event.preventDefault()
@@ -208,29 +214,28 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 </script>
 
 <template>
-	<main id="painting">
+	<!-- swipes anywhere on the page, not only on the painting -->
+	<main id="painting" @pointerdown="swipeStart" @pointermove="swipeMove" @pointerup="swipeEnd" @pointercancel="swipeEnd">
 		<p v-if="painting === null" class="muted">Painting not found.</p>
 		<template v-else-if="painting">
 			<div ref="content" class="content" :class="layout.mode">
 			<div class="stage" :class="layout.mode">
-				<button class="previous" :disabled="!previous" title="previous (←)" @click="go(previous)">‹</button>
+				<button class="previous" :disabled="!previous" title="previous (←)" @click="go(previous, -1)">‹</button>
 				<div ref="wall" class="wall">
 				<img
 					:key="painting.id"
 					:src="imageUrl(painting, 'normal')"
 					:alt="painting.title"
-					:class="{ magnifying }"
+					:class="[{ magnifying }, slide]"
 					:style="{ borderRadius: cornerRadius(painting.width_cm, painting.height_cm), ...layout.img, ...swipeStyle }"
 					@load="onLoad"
 					@click="toggleMagnifier"
-					@pointermove="moveLens($event), swipeMove($event)"
-					@pointerdown="moveLens($event), swipeStart($event)"
-					@pointerup="swipeEnd"
-					@pointercancel="swipeEnd"
+					@pointermove="moveLens"
+					@pointerdown="moveLens"
 					@pointerleave="lens = undefined"
 				/>
 				</div>
-				<button class="next" :disabled="!next" title="next (→)" @click="go(next)">›</button>
+				<button class="next" :disabled="!next" title="next (→)" @click="go(next, 1)">›</button>
 			</div>
 			<div v-if="magnifying && lensStyle" class="lens" :style="lensStyle">
 				<!-- normal image until the detail one (on top) has loaded -->
@@ -269,6 +274,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 }
 
 #painting {
+	/* horizontal moves are swipes (handled here), vertical ones scroll */
+	touch-action: pan-y pinch-zoom;
 	display: flex;
 	flex-direction: column;
 	gap: var(--gap);
@@ -349,8 +356,16 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 
 		& img {
 			cursor: zoom-in;
-			/* horizontal moves are swipes (handled here), vertical ones scroll */
-			touch-action: pan-y pinch-zoom;
+			/* a new painting (key) comes in from the side it was in */
+			&.from-right {
+				animation: slide-in 0.35s ease-out;
+				--from: 100vw;
+			}
+
+			&.from-left {
+				animation: slide-in 0.35s ease-out;
+				--from: -100vw;
+			}
 
 			&.magnifying {
 				cursor: zoom-out;
@@ -405,6 +420,12 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 			max-width: none;
 			will-change: transform;
 		}
+	}
+}
+
+@keyframes slide-in {
+	from {
+		translate: var(--from) 0;
 	}
 }
 </style>
