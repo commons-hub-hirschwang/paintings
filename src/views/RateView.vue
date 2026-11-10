@@ -4,6 +4,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import LoginGate from '@/components/LoginGate.vue'
 import { authed, user } from '@/auth'
 import { imageUrl } from '@/api'
+import { cornerRadius, measureAmbient, usePageColors, wallColors } from '@/ambient'
 import { canName, sizeLabel, stackLabel, type RatePainting } from '../../shared/types'
 
 const paintings = ref<RatePainting[]>([])
@@ -53,8 +54,9 @@ async function rename(painting: RatePainting, title: string) {
 	}
 }
 
-// overlay is open while a painting is selected
+// overlay is open while a painting is selected; the page then takes that painting's wall color
 const select = (id: string | null) => (currentId.value = id)
+usePageColors(() => current.value && wallColors(current.value.id, current.value.color))
 
 // keys 1–9, 0 = 10, Esc closes
 function onKey(event: KeyboardEvent) {
@@ -79,8 +81,14 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 
 			<section v-if="current" class="stage">
 				<button class="close" title="Close (Esc)" @click="select(null)">×</button>
-				<a :href="imageUrl(current, 'detail')" target="_blank">
-					<img :src="imageUrl(current, 'detail')" :alt="current.title" />
+				<a class="wall" :href="imageUrl(current, 'detail')" target="_blank">
+					<img
+						:key="current.id"
+						:src="imageUrl(current, 'detail')"
+						:alt="current.title"
+						:style="{ borderRadius: cornerRadius(current.width_cm, current.height_cm) }"
+						@load="measureAmbient(current.id, $event.target as HTMLImageElement)"
+					/>
 				</a>
 				<aside>
 					<p>
@@ -116,19 +124,29 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 
 			<section v-for="section in [{ title: 'Not rated yet', list: unrated }, { title: 'Rated', list: rated }]" :key="section.title">
 				<h2 v-if="section.list.length">{{ section.title }} ({{ section.list.length }})</h2>
-				<div class="grid">
-					<figure
+				<div class="tiles">
+					<a
 						v-for="painting in section.list"
 						:key="painting.id"
+						href="#"
 						:class="{ active: painting.id === currentId }"
-						@click="select(painting.id)"
+						:style="wallColors(painting.id, painting.color)"
+						@click.prevent="select(painting.id)"
 					>
-						<img :src="imageUrl(painting, 'thumb')" :alt="painting.title" loading="lazy" />
-						<figcaption>
-							<span><span class="muted">{{ stackLabel(painting) }}</span> {{ painting.title || 'Untitled' }}</span>
-							<span class="muted">{{ painting.my_score ?? '' }}</span>
-						</figcaption>
-					</figure>
+						<div class="wall">
+							<img
+								:src="imageUrl(painting, 'thumb')"
+								:alt="painting.title"
+								:style="{ borderRadius: cornerRadius(painting.width_cm, painting.height_cm) }"
+								loading="lazy"
+								@load="measureAmbient(painting.id, $event.target as HTMLImageElement)"
+							/>
+						</div>
+						<p>
+							<span>{{ stackLabel(painting) }} {{ painting.title || 'Untitled' }}</span>
+							<span>{{ painting.my_score === null ? 'not rated' : `rated ${painting.my_score}` }}</span>
+						</p>
+					</a>
 				</div>
 			</section>
 		</LoginGate>
@@ -158,6 +176,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 		z-index: 10;
 		padding: var(--gap);
 		background: var(--bg);
+		color: var(--fg);
+		transition: background 1s;
 
 		& .close {
 			position: absolute;
@@ -182,17 +202,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 			}
 		}
 
-		& > a {
-			min-width: 0;
-			min-height: 0;
-		}
-
-		& > a img {
-			display: block;
-			width: 100%;
-			height: 100%;
-			object-fit: contain;
-			object-position: center;
+		& .wall {
+			padding: min(3rem, 6vw);
 		}
 
 		@media (max-width: 40rem) {
@@ -221,29 +232,12 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 		}
 	}
 
-	& .grid {
-		display: grid;
-		grid-template-columns: repeat(auto-fill, minmax(8rem, 1fr));
-		gap: var(--gap);
+	& .tiles {
+		--tile: 11rem;
 
-		& figure {
-			margin: 0;
-			cursor: pointer;
-
-			&.active {
-				outline: 2px solid var(--fg);
-			}
-		}
-
-		& img {
-			width: 100%;
-			aspect-ratio: 1;
-			object-fit: contain;
-		}
-
-		& figcaption {
-			display: flex;
-			justify-content: space-between;
+		& .active {
+			outline: 2px solid var(--fg);
+			outline-offset: -2px;
 		}
 	}
 }

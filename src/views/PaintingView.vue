@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch, watchEffect } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { formatPrice, imageUrl, loadPaintings, paintings } from '@/api'
-import { cornerRadius, measureAmbient, wallColors } from '@/ambient'
+import { cornerRadius, measureAmbient, usePageColors, wallColors } from '@/ambient'
 import { sizeLabel } from '../../shared/types'
 
 const route = useRoute()
@@ -113,16 +113,7 @@ watch(
 )
 
 // the whole page takes the painting's average color, text in contrast to it
-const pageColors = ['--bg', '--fg', '--muted']
-function resetPageColors() {
-	for (const name of pageColors) document.documentElement.style.removeProperty(name)
-}
-watchEffect(() => {
-	const colors = painting.value && wallColors(painting.value.id, painting.value.color)
-	if (!colors) return resetPageColors()
-	for (const [name, value] of Object.entries(colors)) document.documentElement.style.setProperty(name, value)
-})
-onBeforeUnmount(resetPageColors)
+usePageColors(() => painting.value && wallColors(painting.value.id, painting.value.color))
 
 // The painting is sized here, not by CSS: as large as it fits next to the info and ‹ ›. Those are beside it on a wide
 // screen and below it on a tall one, whatever the painting's shape: they stay where they were while flipping. Painting,

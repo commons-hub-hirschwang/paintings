@@ -156,3 +156,48 @@ fieldset {
 		box-shadow: 0 0.3rem 1.2rem #000;
 	}
 }
+
+/* wall tiles side by side without gaps: each a piece of wall in its painting's color (wallColors, set per tile), text in
+   contrast to it; painting and caption always fit into the square */
+.tiles {
+	--tile: 16rem;
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(var(--tile), 1fr));
+
+	& > * {
+		display: flex;
+		flex-direction: column;
+		gap: var(--gap);
+		aspect-ratio: 1;
+		padding: calc(0.09 * var(--tile));
+		text-decoration: none;
+		background: var(--bg);
+		color: var(--fg);
+		transition: background 0.4s;
+
+		& .wall {
+			flex: 1;
+
+			/* small paintings: a tighter shadow than the single view's */
+			& img {
+				box-shadow: 0 0.15rem 0.5rem #000;
+			}
+		}
+
+		& p {
+			display: flex;
+			flex-direction: column;
+			margin: 0;
+
+			& span:first-child {
+				overflow: hidden;
+				text-overflow: ellipsis;
+				white-space: nowrap;
+			}
+
+			& span:last-child {
+				opacity: 0.7;
+			}
+		}
+	}
+}

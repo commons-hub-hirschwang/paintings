@@ -1,4 +1,4 @@
-import { reactive } from 'vue'
+import { onBeforeUnmount, reactive, watchEffect } from 'vue'
 
 // average color of each painting (by id), measured from whichever of its images loads first; light: dark text on it
 export const ambient = reactive(new Map<string, { color: string; light: boolean }>())
@@ -46,6 +46,18 @@ export function wallColors(id: string, stored?: string | null): Record<string, s
 			'--muted': a.light ? 'rgb(0 0 0 / 0.55)' : 'rgb(255 255 255 / 0.6)',
 		}
 	)
+}
+
+// the whole page in the colors of a painting's wall while the view shows it (nothing: the default page colors)
+export function usePageColors(colors: () => Record<string, string> | null | undefined) {
+	const style = document.documentElement.style
+	const reset = () => ['--bg', '--fg', '--muted'].forEach((name) => style.removeProperty(name))
+	watchEffect(() => {
+		const current = colors()
+		if (!current) return reset()
+		for (const [name, value] of Object.entries(current)) style.setProperty(name, value)
+	})
+	onBeforeUnmount(reset)
 }
 
 // 0.5 cm rounded off the real painting's corners (hides black rectification corners), as % of the image box per axis
