@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { formatPrice, imageUrl, loadPaintings, paintings } from '@/api'
 import { cornerRadius, measureAmbient, usePageColors, wallColors } from '@/ambient'
@@ -20,15 +20,46 @@ const painting = computed(() => (paintings.value ? (paintings.value[index.value]
 const previous = computed(() => (index.value > 0 ? paintings.value![index.value - 1] : undefined))
 const next = computed(() => (index.value >= 0 ? paintings.value![index.value + 1] : undefined))
 
+// Flipping slides like walking along the wall: the current painting leaves to one side while the next one comes in from
+// the other, both moving by the same distance. Each starts from where it is now: a painting still sliding in, or held
+// by a swipe, leaves from there, and the new one follows at the same spacing.
+const SLIDE = { duration: 350, easing: 'ease-out' }
+const image = ref<HTMLImageElement>()
 // replace: browser back always returns to the gallery, however many paintings were flipped through
-// the next painting slides in from the right, the previous one from the left: like walking along the wall
-const slide = ref<'from-right' | 'from-left'>()
-function go(to: { id: string } | undefined, direction: 1 | -1) {
+async function go(to: { id: string } | undefined, direction: 1 | -1) {
 	if (!to) return
-	slide.value = direction > 0 ? 'from-right' : 'from-left'
-	router.replace(`/p/${to.id}`)
+	const img = image.value
+	let travel = direction * innerWidth
+	if (img) {
+		// how far it is off its place right now (mid-slide or swiped): its box without transforms vs. what is shown
+		const shown = img.getBoundingClientRect()
+		const parent = (img.offsetParent ?? document.body).getBoundingClientRect()
+		travel += shown.left - parent.left - img.offsetLeft
+		leave(img, shown, travel)
+	}
+	await router.replace(`/p/${to.id}`)
+	await nextTick()
+	image.value?.animate([{ translate: `${travel}px 0` }, { translate: '0 0' }], SLIDE)
 }
 
+// a copy of the leaving painting, outside the page's layout, where it is seen now; gone once off screen
+function leave(img: HTMLImageElement, at: DOMRect, travel: number) {
+	const copy = img.cloneNode() as HTMLImageElement
+	Object.assign(copy.style, {
+		position: 'fixed',
+		left: `${at.left}px`,
+		top: `${at.top}px`,
+		width: `${at.width}px`,
+		height: `${at.height}px`,
+		margin: '0',
+		transform: 'none',
+		transition: 'none',
+		boxShadow: getComputedStyle(img).boxShadow,
+		pointerEvents: 'none',
+	})
+	document.body.append(copy)
+	copy.animate([{ translate: '0 0' }, { translate: `${-travel}px 0` }], SLIDE).finished.finally(() => copy.remove())
+}
 
 async function buy() {
 	buying.value = true
@@ -217,9 +248,10 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 				<div ref="wall" class="wall">
 				<img
 					:key="painting.id"
+					ref="image"
 					:src="imageUrl(painting, 'normal')"
 					:alt="painting.title"
-					:class="[{ magnifying }, slide]"
+					:class="{ magnifying }"
 					:style="{ borderRadius: cornerRadius(painting.width_cm, painting.height_cm), ...layout.img, ...swipeStyle }"
 					@load="onLoad"
 					@click="toggleMagnifier"
@@ -349,16 +381,6 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 
 		& img {
 			cursor: zoom-in;
-			/* a new painting (key) comes in from the side it was in */
-			&.from-right {
-				animation: slide-in 0.35s ease-out;
-				--from: 100vw;
-			}
-
-			&.from-left {
-				animation: slide-in 0.35s ease-out;
-				--from: -100vw;
-			}
 
 			&.magnifying {
 				cursor: zoom-out;
@@ -413,12 +435,6 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 			max-width: none;
 			will-change: transform;
 		}
-	}
-}
-
-@keyframes slide-in {
-	from {
-		translate: var(--from) 0;
 	}
 }
 </style>
