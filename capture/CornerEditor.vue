@@ -172,7 +172,11 @@ function onKey(event: KeyboardEvent) {
 	}
 	const step = event.shiftKey ? 10 : 1
 	const delta = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] }[event.key]
-	if (event.key === 'Escape') loupeVisible.value = false
+	// Esc hides the loupe first; only without one does it reach the page (which closes an opened painting)
+	if (event.key === 'Escape' && loupeVisible.value) {
+		loupeVisible.value = false
+		event.stopImmediatePropagation()
+	}
 	if (!delta) return
 	event.preventDefault()
 	const corner = quad.value[selected.value]!
@@ -181,8 +185,9 @@ function onKey(event: KeyboardEvent) {
 	loupeVisible.value = true
 	setCorner(selected.value, { x: corner.x + Math.round(move.x), y: corner.y + Math.round(move.y) })
 }
-onMounted(() => window.addEventListener('keydown', onKey))
-onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
+// capture phase: ahead of the page's own key handling
+onMounted(() => window.addEventListener('keydown', onKey, true))
+onBeforeUnmount(() => window.removeEventListener('keydown', onKey, true))
 
 // v-model updates arrive after the parent re-renders, so draw from a post-flush watcher, not right after setting
 watch([quad, selected, loupeVisible], () => loupeVisible.value && drawLoupe(), { flush: 'post' })

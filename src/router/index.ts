@@ -25,4 +25,10 @@ router.beforeEach((_to, from) => {
 	if (from.name === 'gallery') galleryScroll = window.scrollY
 })
 
+// back to where the gallery was (its scroll position) when coming from it, else open it ("← Gallery", Esc)
+export function backToGallery() {
+	if (history.state?.back === '/') router.back()
+	else router.push('/')
+}
+
 export default router

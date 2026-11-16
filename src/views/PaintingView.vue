@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { formatPrice, imageUrl, loadPaintings, paintings } from '@/api'
 import { cornerRadius, measureAmbient, usePageColors, wallColors } from '@/ambient'
 import { sizeLabel } from '../../shared/types'
+import { backToGallery } from '@/router'
 
 const route = useRoute()
 const router = useRouter()
@@ -196,7 +197,8 @@ function onKey(event: KeyboardEvent) {
 	if (event.altKey || event.ctrlKey || event.metaKey || event.target instanceof HTMLInputElement) return
 	if (event.key === 'ArrowLeft') go(previous.value, -1)
 	else if (event.key === 'ArrowRight') go(next.value, 1)
-	else if (event.key === 'Escape') magnifying.value = false
+	// Esc: magnifier off first, then back to the gallery
+	else if (event.key === 'Escape') magnifying.value ? (magnifying.value = false) : backToGallery()
 	else return
 	event.preventDefault()
 }

@@ -1,17 +1,11 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
+import { RouterLink, RouterView, useRoute } from 'vue-router'
 import { loadUser, logout, user } from './auth'
+import { backToGallery } from './router'
 
 loadUser()
 const route = useRoute()
-const router = useRouter()
-
-// back to where the gallery was (its scroll position) when coming from it, else open it
-function backToGallery() {
-	if (history.state?.back === '/') router.back()
-	else router.push('/')
-}
 
 // the other pages this user can open (every role rates); the gallery from /admin and /rate (paintings have their own link)
 const pages = computed(() => {

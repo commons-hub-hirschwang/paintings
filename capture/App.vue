@@ -247,6 +247,8 @@ function turn(direction: 1 | -1) {
 	if (shown) shown = turnCorners(shown, direction) as Quad
 }
 function onKey(event: KeyboardEvent) {
+	// an opened painting is an overlay: Esc closes it like Cancel
+	if (event.key === 'Escape' && editing.value && !busy.value) return closeEditor()
 	if (event.key === 's' && !(event.target instanceof HTMLInputElement) && photo.value && quad.value && !busy.value) snap()
 }
 onMounted(() => window.addEventListener('keydown', onKey))
@@ -437,7 +439,12 @@ const cm = (value: number) => value.toFixed(1)
 				</label>
 			</section>
 
-			<section v-else class="editor">
+			<!-- an opened painting: over the page like in the gallery, on its wall colour -->
+			<section v-else class="editor" :class="{ overlay: editing }" :style="editing ? wallColors(bridge.thumbUrl(editing)) : undefined">
+				<div v-if="editing && (error || busy)" class="notes">
+					<p v-if="error" class="error">{{ error }}</p>
+					<p v-if="busy" class="muted">{{ busy }}</p>
+				</div>
 				<CornerEditor v-model="quad" :src="bridge.photoUrl(photo, editing?.id)" :turns="turns" :bows="bows" @loaded="onPhotoLoaded" />
 
 				<form @submit.prevent="canSave && (editing ? saveChanges() : save())">
@@ -648,6 +655,21 @@ const cm = (value: number) => value.toFixed(1)
 			display: flex;
 			flex-direction: column;
 			gap: var(--gap);
+		}
+
+		&.overlay {
+			position: fixed;
+			inset: 0;
+			z-index: 1;
+			overflow: auto;
+			overscroll-behavior: contain;
+			padding: var(--gap);
+			background: var(--bg);
+			color: var(--fg);
+
+			& > .notes {
+				flex-basis: 100%;
+			}
 		}
 	}
 
