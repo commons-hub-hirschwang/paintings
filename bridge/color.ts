@@ -131,8 +131,23 @@ const nearestShutter = (seconds: number) =>
 
 // A shot to mark the white area in. The light is unknown in manual mode, so the shutter is first brought to where the
 // photo shows something: its brightest parts mid to high, measured over the whole frame.
-export async function takeReference(iso: number) {
+// what a running reference photo or calibration is doing, for the capture tool to follow: the latest shot and a
+// short status (null: nothing running)
+export let colorProgress: { step: string; shot: string | null } | null = null
+const report = (step: string, shot = colorProgress?.shot ?? null) => (colorProgress = { step, shot })
+const following = async <T>(task: () => Promise<T>) => {
+	try {
+		return await task()
+	} finally {
+		colorProgress = null
+	}
+}
+
+const REFERENCE_ATTEMPTS = 4
+export const takeReference = (iso: number) => following(() => reference(iso))
+async function reference(iso: number) {
 	if (!isoChoices.includes(iso)) throw new Error(`ISO ${iso} is not one of ${isoChoices.join(', ')}`)
+	report('Setting up the camera…', null)
 	await rm(shots(), { recursive: true, force: true })
 	const previous = await readColorCalibration()
 	await setFixedSettings()
@@ -140,12 +155,16 @@ export async function takeReference(iso: number) {
 	const start = previous ?? { ...START, iso: DEFAULT_ISO }
 	let exposure: CameraExposure = { shutter: nearestShutter((shutterSeconds(start.shutter) * start.iso) / iso), kelvin: start.kelvin, iso }
 	let file = ''
-	for (let attempt = 0; attempt < 4; attempt++) {
+	let verdict = ''
+	for (let attempt = 0; attempt < REFERENCE_ATTEMPTS; attempt++) {
+		report(`${verdict}Photo ${attempt + 1} of up to ${REFERENCE_ATTEMPTS}: ${exposure.shutter} s, ISO ${iso}…`)
 		await setExposure(exposure)
 		file = await shootRetrying()
+		report(`Photo ${attempt + 1}: measuring the brightness…`, basename(file))
 		const image = await readOriented(file)
 		const { high } = measure(image, { left: 0, top: 0, width: image.width, height: image.height })
 		if (high >= 90 && high <= 240) break
+		verdict = `Photo ${attempt + 1} too ${high > 240 ? 'bright' : 'dark'} (brightest ${Math.round(high)} of 255). `
 		// clipped or nearly black: the measured value says little, so the steps are limited
 		const ratio = Math.max(1 / 8, Math.min(16, toLinear(190) / Math.max(toLinear(high), 0.001)))
 		const next = nearestShutter(shutterSeconds(exposure.shutter) * (high > 240 ? 1 / 4 : ratio))
@@ -159,7 +178,8 @@ export async function takeReference(iso: number) {
 const shootRetrying = () => shoot(shots()).catch(() => shoot(shots()))
 
 // From the marked area in the reference shot to shutter + colour temperature (reshooting until they settle) and gains.
-export async function calibrateColor(file: string, box: Box, target = DEFAULT_WHITE): Promise<ColorCalibration> {
+export const calibrateColor = (file: string, box: Box, target = DEFAULT_WHITE) => following(() => calibrate(file, box, target))
+async function calibrate(file: string, box: Box, target: number): Promise<ColorCalibration> {
 	if (!(target >= WHITE_RANGE[0]! && target <= WHITE_RANGE[1]!)) throw new Error(`white level must be ${WHITE_RANGE.join('–')}`)
 	let exposure = currentExposure()
 	if (!exposure) throw new Error('the camera was reset in between — take the reference photo again')
@@ -169,6 +189,7 @@ export async function calibrateColor(file: string, box: Box, target = DEFAULT_WH
 	let last: { mired: number; redBlue: number } | null = null
 
 	for (let shot = 1; ; shot++) {
+		report(`Photo ${shot}: measuring the marked white…`, basename(photo))
 		const image = await readOriented(photo)
 		const { linear, rgb, spread } = measure(image, box)
 		const [r, g, b] = linear
@@ -196,6 +217,7 @@ export async function calibrateColor(file: string, box: Box, target = DEFAULT_WH
 			return saveCalibration(image, box, exposure, linear, target, warnings)
 		}
 		exposure = { shutter, kelvin, iso: exposure.iso }
+		report(`Photo ${shot + 1} of up to ${MAX_SHOTS}: ${shutter} s, ${kelvin} K, ISO ${exposure.iso}…`)
 		await setExposure(exposure)
 		photo = await shootRetrying()
 		// every measurement must come from a photo really taken with these settings

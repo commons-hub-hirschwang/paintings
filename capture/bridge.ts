@@ -76,6 +76,8 @@ export const bridge = {
 	bows: (file: string, quad: Quad) => call<Bow[]>('/bows', json({ file, quad })),
 	colorReference: (iso: number) => call<{ file: string; previous: ColorCalibration | null }>('/color/reference', json({ iso })),
 	calibrateColor: (file: string, box: Box, white: number) => call<ColorCalibration>('/color/calibrate', json({ file, box, white })),
+	// the latest shot and a status while a reference photo or calibration runs (bridge/color.ts)
+	colorProgress: () => call<{ step: string; shot: string | null } | null>('/color/progress'),
 	colorShotUrl: (file: string) => `/bridge/color/shot/${encodeURIComponent(file)}`,
 	colorImageUrl: (name: 'reference.jpg' | 'patch.jpg', version: number) => `/bridge/color/${name}?v=${version}`,
 	forgetCalibration: () => call('/calibration', { method: 'DELETE' }),

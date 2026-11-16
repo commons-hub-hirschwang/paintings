@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // Set the 4 painting corners: hovering magnifies the nearest corner, press anywhere and it moves with the mouse
 // (cursor hidden, Shift = 1/10 speed). Arrow keys nudge the selected corner by 1 px (Shift: 10 px), keys 1–4 select.
-// The view can be turned in quarter turns (painting photographed sideways): the parent turns the corner order
+// The view can be turned in quarter turns (painting photographed sideways, buttons in the parent): the parent turns the corner order
 // along (turnCorners), the photo itself stays as it is; all screen input is turned back into photo coordinates.
 // Each side shows its measured curve (bows, true to scale) and the range it may curve in.
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
@@ -11,7 +11,7 @@ import { MAX_BOW, type Point, type Quad } from '../shared/geometry'
 
 const props = defineProps<{ src: string; turns: number; bows: Bow[] | null }>() // turns: clockwise quarter turns of the view
 const quad = defineModel<Quad | null>({ required: true }) // null until the parent sets corners on `loaded`
-const emit = defineEmits<{ loaded: [size: { width: number; height: number }]; turn: [direction: 1 | -1] }>()
+const emit = defineEmits<{ loaded: [size: { width: number; height: number }] }>()
 const photo = shallowRef<HTMLImageElement | null>(null)
 
 const LOUPE = 220 // css px
@@ -116,7 +116,7 @@ function nearestCorner(event: PointerEvent) {
 }
 
 function startDrag(event: PointerEvent) {
-	if (!quad.value || event.button !== 0 || (event.target as HTMLElement).closest('button')) return
+	if (!quad.value || event.button !== 0) return
 	event.preventDefault()
 	selected.value = nearestCorner(event)
 	dragPoint = { ...quad.value[selected.value]! }
@@ -131,10 +131,6 @@ function startDrag(event: PointerEvent) {
 // hovering already selects the corner a press would grab and shows it magnified
 function hover(event: PointerEvent) {
 	if (!quad.value || event.pointerType !== 'mouse') return
-	if ((event.target as HTMLElement).closest('button')) {
-		loupeVisible.value = false
-		return
-	}
 	selected.value = nearestCorner(event)
 	loupeVisible.value = true
 }
@@ -277,8 +273,6 @@ const loupeStyle = computed(() => {
 		</svg>
 		<canvas v-show="loupeVisible" ref="loupe" class="loupe" :style="loupeStyle" />
 		</div>
-		<button type="button" class="turn left" title="Turn left (painting photographed sideways)" @click="emit('turn', -1)">↺</button>
-		<button type="button" class="turn right" title="Turn right (painting photographed sideways)" @click="emit('turn', 1)">↻</button>
 	</div>
 </template>
 
@@ -304,30 +298,6 @@ const loupeStyle = computed(() => {
 		display: block;
 		width: 100%;
 		height: 100%;
-	}
-
-	& .turn {
-		position: absolute;
-		bottom: var(--gap);
-		width: 3.5rem;
-		height: 3.5rem;
-		border-radius: 50%;
-		font-size: 2rem;
-		line-height: 1;
-		opacity: 0.6;
-		cursor: pointer;
-
-		&:hover {
-			opacity: 0.9;
-		}
-
-		&.left {
-			left: var(--gap);
-		}
-
-		&.right {
-			right: var(--gap);
-		}
 	}
 
 	& svg {

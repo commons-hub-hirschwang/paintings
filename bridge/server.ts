@@ -18,7 +18,7 @@ import { changePainting, correctedPhoto, dirs, ensureDirs, paintingSource, queue
 import { isSynced, isWaiting, syncAll, syncProgress } from './sync'
 import { currentProject, knownStackNames, listProjects, openProject, projectPath, setKnownStackNames } from './project'
 import { readOriented } from './warp'
-import { applyGains, calibrateColor, clippedShare, colorFile, correctionFor, DEFAULT_ISO, readColorCalibration, shotFile, takeReference, type Box, type ColorCalibration, type Gains } from './color'
+import { applyGains, calibrateColor, clippedShare, colorProgress, colorFile, correctionFor, DEFAULT_ISO, readColorCalibration, shotFile, takeReference, type Box, type ColorCalibration, type Gains } from './color'
 import { ensureLocked, exclusive, exposureMismatch, forgetCameraState, shoot } from './tether'
 import { exposureOf } from './camera'
 import { detectCorners, keepOnly, measureBows, snapCorners, trusted } from './detect'
@@ -129,6 +129,7 @@ app.post('/color/calibrate', async (c) => {
 	const { file, box, white } = await c.req.json<{ file: string; box: Box; white?: number }>()
 	return c.json(await exclusive(() => calibrateColor(file, box, white)))
 })
+app.get('/color/progress', (c) => c.json(colorProgress))
 app.get('/color/shot/:file', async (c) => {
 	const file = shotFile(c.req.param('file'))
 	if (!existsSync(file)) return c.notFound()

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // Colour calibration: reference photo of a painting → drag a box over a white area → the bridge sets exposure and
 // white balance from it. Prefilled with the last area: the same painting and spot keep sessions comparable.
-import { computed, ref, shallowRef } from 'vue'
+import { computed, onBeforeUnmount, ref, shallowRef } from 'vue'
 import OverexposureMarks from './OverexposureMarks.vue'
 import { bridge, type Box, type ColorCalibration } from './bridge'
 
@@ -33,13 +33,26 @@ function again() {
 	overexposed.value = 0
 }
 
+// while the bridge takes photos: its latest shot and what it is doing
+const progress = ref<{ step: string; shot: string | null } | null>(null)
+let progressPoll: ReturnType<typeof setInterval>
+const following = (label: string, task: () => Promise<void>) =>
+	props.run(label, async () => {
+		progressPoll = setInterval(() => bridge.colorProgress().then((p) => (progress.value = p), () => {}), 500)
+		await task().finally(() => {
+			clearInterval(progressPoll)
+			progress.value = null
+		})
+	})
+onBeforeUnmount(() => clearInterval(progressPoll))
+
 const takeReference = () =>
-	props.run('Taking the reference photo (finding the exposure, up to 1 min)…', async () => {
+	following('Taking the reference photo (finding the exposure, up to 1 min)…', async () => {
 		file.value = (await bridge.colorReference(iso.value)).file
 	})
 
 const calibrate = () =>
-	props.run('Calibrating: setting exposure and white balance, a few more photos…', async () => {
+	following('Calibrating: setting exposure and white balance, a few more photos…', async () => {
 		result.value = await bridge.calibrateColor(file.value!, box.value!, whiteLevel.value)
 	})
 
@@ -71,7 +84,11 @@ function move(event: PointerEvent) {
 
 <template>
 	<section id="color-calibration">
-		<template v-if="result">
+		<div v-if="progress" class="progress">
+			<p>{{ progress.step }}</p>
+			<img v-if="progress.shot" :src="bridge.colorShotUrl(progress.shot)" alt="the latest shot" />
+		</div>
+		<template v-else-if="result">
 			<p>
 				Calibrated: {{ result.shutter }} s, f/{{ result.fNumber }}, ISO {{ result.iso }}, {{ result.kelvin }} K. The marked white now
 				reads {{ result.white }} of 255. This is how paintings will look: compare it with the real painting.
@@ -140,6 +157,12 @@ function move(event: PointerEvent) {
 
 	& .previous {
 		max-width: 24rem;
+	}
+
+	& .progress img {
+		display: block;
+		max-width: 100%;
+		max-height: 75vh;
 	}
 
 	& .photo {

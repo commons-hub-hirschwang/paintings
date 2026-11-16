@@ -438,7 +438,7 @@ const cm = (value: number) => value.toFixed(1)
 			</section>
 
 			<section v-else class="editor">
-				<CornerEditor v-model="quad" :src="bridge.photoUrl(photo, editing?.id)" :turns="turns" :bows="bows" @turn="turn" @loaded="onPhotoLoaded" />
+				<CornerEditor v-model="quad" :src="bridge.photoUrl(photo, editing?.id)" :turns="turns" :bows="bows" @loaded="onPhotoLoaded" />
 
 				<form @submit.prevent="canSave && (editing ? saveChanges() : save())">
 					<fieldset>
@@ -502,6 +502,13 @@ const cm = (value: number) => value.toFixed(1)
 						</p>
 					</div>
 					<div class="fields">
+						<div class="turn">
+							Turn view
+							<div>
+								<button type="button" title="Turn left (painting photographed sideways)" @click="turn(-1)">↺</button>
+								<button type="button" title="Turn right (painting photographed sideways)" @click="turn(1)">↻</button>
+							</div>
+						</div>
 						<label>
 							Width (cm)
 							<input v-model="widthCm" type="number" min="1" step="0.1" :required="!calibration || !!editing" />
@@ -713,6 +720,17 @@ const cm = (value: number) => value.toFixed(1)
 
 		& .grow {
 			flex: 1 1 10rem;
+		}
+
+		/* laid out like the labelled fields beside it */
+		& .turn {
+			display: flex;
+			flex-direction: column;
+			gap: 0.2rem;
+
+			& button {
+				height: 2.4rem;
+			}
 		}
 
 		& .actions {
