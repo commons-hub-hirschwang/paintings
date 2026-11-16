@@ -159,18 +159,13 @@ app.get('/photo/:file', async (c) => {
 	return c.body(new Uint8Array(await photoView(photo.path, gains)), 200, { 'content-type': 'image/jpeg' })
 })
 
-// "snap": refine roughly placed corners to the painting's edges. `previous`: the corners shown before (automatic,
-// opened or snapped). A corner moved by hand since was moved off a wrong edge: it only searches within 2/3 of how far
-// it was moved, so it can't snap back. Unmoved corners, or nothing shown before: the usual search.
+// "snap": refine roughly placed corners to the painting's edges. `held`: per corner, placed by hand (since the photo
+// came): it stays near where it was put and the search starts from it (bridge/detect.ts snapCorners). The others follow.
 app.post('/detect', async (c) => {
-	const { file, quad, previous } = await c.req.json<{ file: string; quad: Quad; previous?: Quad | null }>()
+	const { file, quad, held } = await c.req.json<{ file: string; quad: Quad; held?: boolean[] }>()
 	const photo = await correctedPhoto(file)
 	if (!photo) return c.notFound()
-	const radii = quad.map((p, k) => {
-		const moved = previous ? Math.hypot(p.x - previous[k]!.x, p.y - previous[k]!.y) : 0
-		return moved > 1 ? Math.max(2, (moved * 2) / 3) : null
-	})
-	const { detection, unsnapped } = await snapCorners(photo.path, quad, radii)
+	const { detection, unsnapped } = await snapCorners(photo.path, quad, held ?? [false, false, false, false])
 	return c.json({ ...detection, trusted: trusted(detection, photo.camera), unsnapped })
 })
 

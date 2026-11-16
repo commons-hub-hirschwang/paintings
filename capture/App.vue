@@ -27,9 +27,10 @@ const turns = ref(0)
 // automatic corners (in the painting's orientation)
 const detection = ref<Detection | null>(null)
 const keptDetection = computed(() => !!detection.value && quad.value === detection.value.quad)
-// the corners shown last (automatic, opened or snapped): corners moved away from them were moved off a wrong edge,
-// a snap keeps them near where they were put
+// the corners shown last (automatic, opened, snapped or the first rough ones): corners moved away from them are placed
+// by hand, and stay held for every later snap of this photo: near where they were put, the search starts from them
 let shown: Quad | null = null
+let held = [false, false, false, false]
 const snapWarning = ref('')
 // how the sides curve between the current corners: measured again after they changed, applied on save
 const bows = ref<Bow[] | null>(null)
@@ -219,6 +220,7 @@ function setPhoto(result: Photo) {
 	detection.value = result.detection && turnDetection(result.detection, turns.value)
 	quad.value = detection.value?.quad ?? null
 	shown = quad.value
+	held = [false, false, false, false]
 	snapWarning.value = ''
 	camera.value = result.camera
 	photo.value = result.file
@@ -228,7 +230,8 @@ function setPhoto(result: Photo) {
 // roughly placed corners → snapped to the painting's edges
 const snap = () =>
 	run('Snapping to edges…', async () => {
-		const result = await bridge.detect(photo.value!, quad.value!, shown)
+		held = quad.value!.map((p, k) => held[k]! || (!!shown && Math.hypot(p.x - shown[k]!.x, p.y - shown[k]!.y) > 1))
+		const result = await bridge.detect(photo.value!, quad.value!, held)
 		detection.value = turnDetection(result, turns.value)
 		quad.value = shown = detection.value.quad
 		snapWarning.value = result.unsnapped
@@ -245,6 +248,7 @@ function turn(direction: 1 | -1) {
 		quad.value = detection.value.quad
 	} else if (quad.value) quad.value = turnCorners(quad.value, direction) as Quad
 	if (shown) shown = turnCorners(shown, direction) as Quad
+	held = turnCorners(held, direction)
 }
 function onKey(event: KeyboardEvent) {
 	// an opened painting is an overlay: Esc closes it like Cancel
@@ -258,12 +262,13 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 function onPhotoLoaded({ width, height }: { width: number; height: number }) {
 	photoSize = { width, height }
 	if (quad.value) return
-	if (lastQuad && lastQuad.width === width && lastQuad.height === height) {
-		quad.value = turnCorners(lastQuad.quad, turns.value - lastQuad.turns) as Quad
-		return
+	if (lastQuad && lastQuad.width === width && lastQuad.height === height) quad.value = turnCorners(lastQuad.quad, turns.value - lastQuad.turns) as Quad
+	else {
+		const inset = (x: number, y: number) => ({ x: width * x, y: height * y })
+		quad.value = [inset(0.15, 0.15), inset(0.85, 0.15), inset(0.85, 0.85), inset(0.15, 0.85)]
 	}
-	const inset = (x: number, y: number) => ({ x: width * x, y: height * y })
-	quad.value = [inset(0.15, 0.15), inset(0.85, 0.15), inset(0.85, 0.85), inset(0.15, 0.85)]
+	// rough corners: those moved from here are placed by hand
+	shown = quad.value
 }
 
 // bring up a saved painting: same editor, with its corners, the view turned as it was saved
@@ -277,6 +282,7 @@ const openPainting = (painting: LocalPainting) =>
 		camera.value = photoCamera
 		photo.value = file
 		quad.value = shown = corners
+		held = [false, false, false, false]
 		snapWarning.value = ''
 		// the corner at the photo's top left tells how far the view was turned
 		const sums = corners.map((p) => p.x + p.y)

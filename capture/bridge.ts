@@ -70,9 +70,8 @@ export const bridge = {
 	status: () => call<BridgeStatus>('/status'),
 	capture: () => call<Photo>('/capture', { method: 'POST' }),
 	upload: (file: File) => call<Photo>('/upload', { method: 'POST', body: file }),
-	// previous: the corners shown before the hand moved some (see bridge/server.ts)
-	detect: (file: string, quad: Quad, previous: Quad | null) =>
-		call<Detection & { unsnapped: number }>('/detect', json({ file, quad, previous })),
+	// held: per corner, placed by hand (see bridge/server.ts)
+	detect: (file: string, quad: Quad, held: boolean[]) => call<Detection & { unsnapped: number }>('/detect', json({ file, quad, held })),
 	bows: (file: string, quad: Quad) => call<Bow[]>('/bows', json({ file, quad })),
 	colorReference: (iso: number) => call<{ file: string; previous: ColorCalibration | null }>('/color/reference', json({ iso })),
 	calibrateColor: (file: string, box: Box, white: number) => call<ColorCalibration>('/color/calibrate', json({ file, box, white })),

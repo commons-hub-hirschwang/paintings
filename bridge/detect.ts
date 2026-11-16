@@ -22,7 +22,22 @@ export type Side = { inliers: number; bowPx: number; contrast: number }
 export type Detection = { quad: Quad; sides: Side[] }
 
 const COARSE_SIZE = 1000 // long side of the Hough image
-const CANDIDATES = 25 // coarse quads refined at full resolution
+// tunable (scripts/corners-eval.ts --set name=value)
+export const params = {
+	candidates: 25, // coarse quads refined at full resolution
+	// Lines from the edges above each share of the gradients: 0.92 = the strong edges, 0.7 = weaker ones too (a dark
+	// canvas on the dark background next to a busy painting stays below the first)
+	edgeShares: [0.92, 0.7],
+	linesPerDirection: 12,
+	minVote: 60, // gradient magnitude an edge pixel needs to vote at all
+	// one more pass in which every thin edge pixel (local maximum across the edge) above countMin votes once: a long
+	// faint edge (dark canvas on the dark background) wins by its length, not its contrast. 0: no such pass
+	countMin: 10,
+	// snap: a corner placed by hand ends within this many px of where it was put (the hand is that precise)
+	heldRadius: 60,
+	anchoredLines: 4, // per direction and placed corner: lines starting at it, added to the Hough lines
+	anchorEdge: 6, // gradient magnitude of a thin edge pixel counting for an anchored line
+}
 const MIN_INLIERS = 0.6 // share of edge samples on the fitted curve, per side, for a trusted detection
 const MAX_ANGLE_ERROR = 1 // ° off square in 3D (shared/geometry.ts reconstruct), for a trusted detection
 
@@ -103,22 +118,18 @@ const largestDistance = (a: Quad, b: Quad) => Math.max(...a.map((p, k) => Math.h
 
 // ---------- coarse: Hough ----------
 
-// Lines from the edges above each share of the gradients: 0.92 = the strong edges, 0.7 = weaker ones too (a dark
-// canvas on the dark background next to a busy painting stays below the first)
-const EDGE_SHARES = [0.92, 0.7]
-const LINES_PER_DIRECTION = 12
 
-function houghLines(image: Grey, share: number, gradients: [number, number, number, number][], magnitudes: Float64Array) {
+// gradients: [x, y, gx, gy]; weight: a voting pixel's vote
+function houghLines(image: Grey, gradients: [number, number, number, number][], weight: (magnitude: number) => number) {
 	const { width, height } = image
 	const ANGLES = 360 // 0.5° bins over 180°
 	const diagonal = Math.hypot(width, height)
 	const RHO_BINS = Math.ceil(diagonal) * 2
 	const votes = new Float32Array(ANGLES * RHO_BINS)
-	// edges above the share, but at least a clear step
-	const threshold = Math.max(60, magnitudes[Math.floor(magnitudes.length * share)]!)
 	for (const [x, y, gx, gy] of gradients) {
 		const magnitude = Math.hypot(gx, gy)
-		if (magnitude < threshold) continue
+		const vote = weight(magnitude)
+		if (!vote) continue
 		let angle = Math.atan2(gy, gx)
 		if (angle < 0) angle += Math.PI
 		// near-horizontal or near-vertical edges only (±25°)
@@ -129,7 +140,7 @@ function houghLines(image: Grey, share: number, gradients: [number, number, numb
 			const bin = ((k % ANGLES) + ANGLES) % ANGLES
 			const theta = (bin / ANGLES) * Math.PI
 			const rho = x * Math.cos(theta) + y * Math.sin(theta)
-			votes[bin * RHO_BINS + Math.round(rho + diagonal)]! += magnitude
+			votes[bin * RHO_BINS + Math.round(rho + diagonal)]! += vote
 		}
 	}
 	// peaks: local maxima, strongest first, separated by ≥ 2 % of the image
@@ -139,7 +150,7 @@ function houghLines(image: Grey, share: number, gradients: [number, number, numb
 	order.sort((a, b) => votes[b]! - votes[a]!)
 	const minSeparation = 0.02 * Math.max(width, height)
 	for (const i of order) {
-		if (peaks.length >= LINES_PER_DIRECTION * 4) break
+		if (peaks.length >= params.linesPerDirection * 4) break
 		const theta = (Math.floor(i / RHO_BINS) / ANGLES) * Math.PI
 		const rho = (i % RHO_BINS) - diagonal
 		const line = { n: { x: Math.cos(theta), y: Math.sin(theta) }, rho }
@@ -152,12 +163,89 @@ function houghLines(image: Grey, share: number, gradients: [number, number, numb
 	return peaks
 }
 
-// the strongest roughly horizontal and roughly vertical lines, from strong and from weaker edges
-function lines(image: Grey) {
+// thin edges: per pixel the gradient's angle where its magnitude is a maximum across the edge and above `min`, else NaN
+function thinEdges(image: Grey, magnitude: Float32Array, min: number) {
+	const { width, height, data: d } = image
+	const angles = new Float32Array(width * height).fill(NaN)
+	for (let y = 1; y < height - 1; y++)
+		for (let x = 1; x < width - 1; x++) {
+			const i = y * width + x
+			const m = magnitude[i]!
+			if (m < min) continue
+			const gx = d[i + 1 - width]! + 2 * d[i + 1]! + d[i + 1 + width]! - d[i - 1 - width]! - 2 * d[i - 1]! - d[i - 1 + width]!
+			const gy = d[i + width - 1]! + 2 * d[i + width]! + d[i + width + 1]! - d[i - width - 1]! - 2 * d[i - width]! - d[i - width + 1]!
+			const dx = Math.round(gx / m)
+			const dy = Math.round(gy / m)
+			if (m >= magnitude[i + dy * width + dx]! && m >= magnitude[i - dy * width - dx]!) angles[i] = Math.atan2(gy, gx)
+		}
+	return angles
+}
+
+// a thin edge pixel within 1 px across a line with normal n, its gradient across the line (either sign) within 20°
+function edgeNear(image: Grey, edges: Float32Array, x: number, y: number, n: Point) {
+	const { width, height } = image
+	for (let o = -1; o <= 1; o++) {
+		const px = Math.round(x + n.x * o)
+		const py = Math.round(y + n.y * o)
+		if (px < 0 || py < 0 || px >= width || py >= height) continue
+		const angle = edges[py * width + px]!
+		if (Number.isNaN(angle)) continue
+		if (Math.abs(Math.cos(angle) * n.x + Math.sin(angle) * n.y) > 0.94) return true
+	}
+	return false
+}
+
+// Lines starting at a corner placed by hand (somewhere within `radius`): a painting's side ends at its corner, a beam
+// of the trestle or a painted line runs on through it. Per direction (along the photo's rows / columns ±25°, away from
+// the photo's centre… towards it), every line through the circle is scored by the thin edge along it from the corner
+// inwards minus the edge running on past the corner; the best distinct ones.
+function anchoredLines(image: Grey, edges: Float32Array, anchor: Point, radius: number) {
+	const { width, height } = image
+	const length = 0.2 * Math.max(width, height) // the shortest side worth looking at
+	const center = { x: width / 2, y: height / 2 }
+	const edgeAt = (x: number, y: number, n: Point) => edgeNear(image, edges, x, y, n)
+	const result: { horizontal: Line[]; vertical: Line[] } = { horizontal: [], vertical: [] }
+	for (const direction of ['horizontal', 'vertical'] as const) {
+		const scored: { line: Line; score: number; angle: number; offset: number }[] = []
+		for (let degrees = -25; degrees <= 25; degrees += 0.5) {
+			const phi = (degrees * Math.PI) / 180
+			// along the line, towards the photo's centre
+			let u = direction === 'horizontal' ? { x: Math.cos(phi), y: Math.sin(phi) } : { x: -Math.sin(phi), y: Math.cos(phi) }
+			const inwards = direction === 'horizontal' ? Math.sign(center.x - anchor.x) : Math.sign(center.y - anchor.y)
+			u = { x: u.x * inwards, y: u.y * inwards }
+			const n = { x: -u.y, y: u.x }
+			for (let offset = -radius; offset <= radius; offset++) {
+				const start = { x: anchor.x + n.x * offset, y: anchor.y + n.y * offset }
+				let inside = 0
+				let outside = 0
+				for (let t = 3; t <= length; t++) {
+					if (edgeAt(start.x + u.x * t, start.y + u.y * t, n)) inside++
+					if (edgeAt(start.x - u.x * t, start.y - u.y * t, n)) outside++
+				}
+				const line = { n, rho: n.x * start.x + n.y * start.y }
+				scored.push({ line, score: (inside - outside) / length, angle: degrees, offset })
+			}
+		}
+		scored.sort((a, b) => b.score - a.score)
+		const picked: typeof scored = []
+		for (const candidate of scored) {
+			if (picked.length >= params.anchoredLines) break
+			if (picked.some((p) => Math.abs(p.angle - candidate.angle) < 2 && Math.abs(p.offset - candidate.offset) < 4)) continue
+			picked.push(candidate)
+		}
+		result[direction] = picked.map((p) => p.line)
+	}
+	return result
+}
+
+// the strongest roughly horizontal and roughly vertical lines, from strong and from weaker edges; `anchors`: corners
+// placed by hand (± radius), their lines (anchoredLines) added
+function lines(image: Grey, anchors: { point: Point; radius: number }[] = []) {
 	const { width, height } = image
 	const magnitudes = new Float64Array((width - 2) * (height - 2))
 	let measuredPixels = 0
 	const gradients: [number, number, number, number][] = []
+	const all = new Float32Array(width * height)
 	for (let y = 1; y < height - 1; y++) {
 		for (let x = 1; x < width - 1; x++) {
 			const i = y * width + x
@@ -165,7 +253,8 @@ function lines(image: Grey) {
 			const gx = d[i + 1 - width]! + 2 * d[i + 1]! + d[i + 1 + width]! - d[i - 1 - width]! - 2 * d[i - 1]! - d[i - 1 + width]!
 			const gy = d[i + width - 1]! + 2 * d[i + width]! + d[i + width + 1]! - d[i - width - 1]! - 2 * d[i - width]! - d[i - width + 1]!
 			const magnitude = Math.hypot(gx, gy)
-			if (magnitude > 40) gradients.push([x, y, gx, gy])
+			all[i] = magnitude
+			if (magnitude > Math.min(40, params.minVote, params.countMin || Infinity)) gradients.push([x, y, gx, gy])
 			magnitudes[measuredPixels++] = magnitude
 		}
 	}
@@ -173,12 +262,36 @@ function lines(image: Grey) {
 	const horizontal: Line[] = []
 	const vertical: Line[] = []
 	const same = (a: Line, b: Line) => Math.abs(a.n.x * b.n.x + a.n.y * b.n.y) > 0.9999 && Math.abs(Math.abs(a.rho) - Math.abs(b.rho)) < 3
-	for (const share of EDGE_SHARES) {
-		const found = houghLines(image, share, gradients, magnitudes)
+	const passes = params.edgeShares.map((share) => {
+		// edges above the share, but at least a clear step
+		const threshold = Math.max(params.minVote, magnitudes[Math.floor(magnitudes.length * share)]!)
+		return () => houghLines(image, gradients, (magnitude) => (magnitude >= threshold ? magnitude : 0))
+	})
+	if (params.countMin) {
+		// thin edges: only the pixels whose magnitude is a maximum across the edge
+		const thin = gradients.filter(([x, y, gx, gy]) => {
+			const m = Math.hypot(gx, gy)
+			if (m < params.countMin) return false
+			const dx = Math.round(gx / m)
+			const dy = Math.round(gy / m)
+			return m >= all[(y + dy) * width + x + dx]! && m >= all[(y - dy) * width + x - dx]!
+		})
+		passes.push(() => houghLines(image, thin, () => 1))
+	}
+	if (anchors.length) {
+		const edges = thinEdges(image, all, params.anchorEdge)
+		for (const { point, radius } of anchors) {
+			const found = anchoredLines(image, edges, point, radius)
+			horizontal.push(...found.horizontal)
+			vertical.push(...found.vertical)
+		}
+	}
+	for (const pass of passes) {
+		const found = pass()
 		// image y axis points down: "horizontal" lines have a vertical normal
-		for (const line of found.filter((l) => Math.abs(l.n.y) > 0.9).slice(0, LINES_PER_DIRECTION))
+		for (const line of found.filter((l) => Math.abs(l.n.y) > 0.9).slice(0, params.linesPerDirection))
 			if (!horizontal.some((other) => same(other, line))) horizontal.push(line)
-		for (const line of found.filter((l) => Math.abs(l.n.x) > 0.9).slice(0, LINES_PER_DIRECTION))
+		for (const line of found.filter((l) => Math.abs(l.n.x) > 0.9).slice(0, params.linesPerDirection))
 			if (!vertical.some((other) => same(other, line))) vertical.push(line)
 	}
 	return { horizontal, vertical }
@@ -205,8 +318,8 @@ function inside({ x, y }: Point, image: Grey) {
 }
 
 // the best distinct quads around the image's centre, by edge support; `accept`: only these (snap: near the corners)
-function coarseQuads(image: Grey, accept: (quad: Quad) => boolean = () => true): Quad[] {
-	const { horizontal, vertical } = lines(image)
+function coarseQuads(image: Grey, accept: (quad: Quad) => boolean = () => true, anchors: { point: Point; radius: number }[] = []): Quad[] {
+	const { horizontal, vertical } = lines(image, anchors)
 	// y of a horizontal line at the image center column, x of a vertical line at the center row
 	const center = { x: image.width / 2, y: image.height / 2 }
 	const position = (l: Line) => (Math.abs(l.n.y) > 0.9 ? (l.rho - l.n.x * center.x) / l.n.y : (l.rho - l.n.y * center.y) / l.n.x)
@@ -231,7 +344,7 @@ function coarseQuads(image: Grey, accept: (quad: Quad) => boolean = () => true):
 	scored.sort((a, b) => b.score - a.score)
 	const best: Quad[] = []
 	for (const { quad } of scored) {
-		if (best.length >= CANDIDATES) break
+		if (best.length >= params.candidates) break
 		if (!best.some((other) => largestDistance(other, quad) < 3)) best.push(quad)
 	}
 	return best
@@ -410,6 +523,7 @@ function edgeScore(image: Grey, curves: Curve[], joints: { s: number; u: number 
 			for (let d = 6; d <= GAP_LENGTH + 3 && gap; d += 3) if (!(step(corner + (inwards * d) / length) < GAP_STEP)) gap = false
 			if (gap) gaps++
 		}
+		// beyond each corner, starting clear of the other side's edge
 	})
 	return total / 4 - gaps
 }
@@ -495,25 +609,13 @@ function alignedTo(quad: Quad, reference: Quad): Quad {
 	return rotations.reduce((a, b) => (spread(b) < spread(a) ? b : a))
 }
 
-// "snap": the detection again, with the corners placed by hand as limits: every corner ends within its radius of where
-// it was placed (`radii`: a corner moved by hand only near where it was put; null: free, the usual 4 %). The best quad
-// within the limits wins, so a corner moved off a wrong edge takes the other end of that edge along. Candidates: the
-// coarse quads within the limits, and the placed corners refined in place. Nothing found: the corners stay as placed.
-export async function snapCorners(file: string, quad: Quad, radii: (number | null)[]) {
-	seed = 1
-	const [full, small] = await Promise.all([fullGrey(file), grey(file, COARSE_SIZE, 1)])
-	const factor = full.width / small.width
-	const coarseRange = Math.ceil(factor * 3) + 4
-	// after a drag, only dragged corners are held; the others go wherever the best edges are (the placed rect may be far
-	// off). Nothing dragged: everything stays near where it is
-	const dragged = radii.some((r) => r !== null)
-	const limits = radii.map((r) => r ?? (dragged ? Infinity : hintRange(full)))
-	const within = (candidate: Quad, slack: number) =>
-		alignedTo(candidate, quad).every((p, k) => Math.hypot(p.x - quad[k]!.x, p.y - quad[k]!.y) <= limits[k]! + slack)
-	const starts = coarseQuads(small, (q) => within(scale(q, factor), coarseRange)).map((q) => ({ quad: scale(q, factor), ranges: evenly(coarseRange) }))
-	// the placed corners refined in place: both sides of a limited corner searched only within its radius
-	const sideRadius = (k: number) => Math.min(limits[k]!, limits[(k + 1) % 4]!, hintRange(full))
-	starts.push({ quad, ranges: [0, 1, 2, 3].map((k): [number, number] => [sideRadius(k), sideRadius(k)]) })
+// "snap": the detection again, with corners placed by hand (`held`) as anchors: each ends within params.heldRadius of
+// where it was put, and the search starts from it: lines starting at a held corner join the Hough lines (anchoredLines),
+// and only quads with their corners near the held ones are refined. The other corners go wherever the best edges are
+// (the rest of the shown quad may be far off). Nothing held: everything stays near where it is (hintRange).
+// Candidates: those quads, and the placed corners refined in place. Nothing found: the corners stay as placed.
+export async function snapCorners(file: string, quad: Quad, held: boolean[]) {
+	const { full, starts, within } = await snapStarts(file, quad, held)
 	let best: { detection: Detection; score: number } | null = null
 	for (const { quad: start, ranges } of starts) {
 		const refined = refine(full, start, ranges)
@@ -523,6 +625,55 @@ export async function snapCorners(file: string, quad: Quad, radii: (number | nul
 	if (best) return { detection: upright(best.detection), unsnapped: 0 }
 	const placed = refine(full, quad, [0, 1, 2, 3].map((): [number, number] => [0, 0]), true)!
 	return { detection: upright(placed.detection), unsnapped: 4 }
+}
+
+// for scripts/corners-eval.ts, why corners went wrong: how near the candidates came to the truth (largest corner
+// distance, after refining), and how the winner and the truth (refined like a candidate) score. The truth scoring
+// higher: it was no candidate; lower: the score prefers something else
+export type Explanation = { nearest: number; winner: { score: number; distance: number } | null; truth: { score: number; distance: number } | null }
+function explanation(full: Grey, starts: { quad: Quad; ranges: [number, number][] }[], truth: Quad, range: number, allowed: (q: Quad) => boolean): Explanation {
+	const distance = (q: Quad) => largestDistance(alignedTo(q, truth), truth)
+	const refined = starts.flatMap(({ quad, ranges }) => refine(full, quad, ranges) ?? []).filter((r) => allowed(r.detection.quad))
+	const winner = refined.reduce<(typeof refined)[number] | null>((a, b) => (!a || b.score > a.score ? b : a), null)
+	const truthRefined = refine(full, truth, evenly(range))
+	return {
+		nearest: Math.min(...refined.map((r) => distance(r.detection.quad))),
+		winner: winner && { score: winner.score, distance: distance(winner.detection.quad) },
+		truth: truthRefined && allowed(truthRefined.detection.quad) ? { score: truthRefined.score, distance: distance(truthRefined.detection.quad) } : null,
+	}
+}
+
+export async function explainDetection(file: string, truth: Quad, hint?: Quad | null) {
+	seed = 1
+	const [full, small] = await Promise.all([fullGrey(file), grey(file, COARSE_SIZE, 1)])
+	const factor = full.width / small.width
+	const range = Math.ceil(factor * 3) + 4
+	const starts = coarseQuads(small).map((quad) => ({ quad: scale(quad, factor), ranges: evenly(range) }))
+	if (hint) starts.push({ quad: hint, ranges: evenly(hintRange(full)) })
+	const center = { x: full.width / 2, y: full.height / 2 }
+	return explanation(full, starts, truth, range, (q) => contains(q, center))
+}
+
+export async function explainSnap(file: string, quad: Quad, held: boolean[], truth: Quad) {
+	const { full, starts, within, coarseRange } = await snapStarts(file, quad, held)
+	return explanation(full, starts, truth, coarseRange, (q) => within(q, 1))
+}
+
+async function snapStarts(file: string, quad: Quad, held: boolean[]) {
+	seed = 1
+	const [full, small] = await Promise.all([fullGrey(file), grey(file, COARSE_SIZE, 1)])
+	const factor = full.width / small.width
+	const coarseRange = Math.ceil(factor * 3) + 4
+	const anyHeld = held.some(Boolean)
+	const limits = held.map((h) => (h ? params.heldRadius : anyHeld ? Infinity : hintRange(full)))
+	const within = (candidate: Quad, slack: number) =>
+		alignedTo(candidate, quad).every((p, k) => Math.hypot(p.x - quad[k]!.x, p.y - quad[k]!.y) <= limits[k]! + slack)
+	const anchors = quad.flatMap((p, k) => (held[k] ? [{ point: { x: p.x / factor, y: p.y / factor }, radius: Math.ceil(params.heldRadius / factor) }] : []))
+	const starts = coarseQuads(small, (q) => within(scale(q, factor), coarseRange), anchors).map((q) => ({ quad: scale(q, factor), ranges: evenly(coarseRange) }))
+	// the placed corners refined in place: both sides of a held corner searched only within its radius
+	const sideRadius = (k: number) => Math.min(limits[k]!, limits[(k + 1) % 4]!, hintRange(full))
+	starts.push({ quad, ranges: [0, 1, 2, 3].map((k): [number, number] => [sideRadius(k), sideRadius(k)]) })
+	return { full, starts, within, coarseRange }
 }
 
 // corners (and sides) in the photo's orientation, starting top left: a hint may come in the painting's
