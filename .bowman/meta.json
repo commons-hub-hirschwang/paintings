@@ -56,7 +56,7 @@
       "ongoing": true
     }
   ],
-  "dataModelVersion": 6,
+  "dataModelVersion": 7,
   "phaseCursors": {},
   "phaseActiveLevel": 0,
   "rootPhaseIds": [],

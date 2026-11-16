@@ -11,9 +11,9 @@
   ],
   "committedIn": [],
   "status": {
-    "state": "open",
-    "comment": "",
-    "date": 1794567894499
+    "state": "implemented",
+    "comment": "Status 'different artist' (public: false) in shared/types.ts statusConfig; migration 0011 applied on production 2026-11-16 (190 available / 15 private / 289 ratings unchanged after), deployed in f24a3b6. Not yet clicked through in the admin UI.",
+    "date": 1794822218105
   },
   "intrinsicValue": 0,
   "selfWeight": 1,
