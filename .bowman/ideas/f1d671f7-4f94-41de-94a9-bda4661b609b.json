@@ -1,0 +1,24 @@
+{
+  "id": "f1d671f7-4f94-41de-94a9-bda4661b609b",
+  "text": "Share previews: a painting's link shows its image, name, size and price",
+  "description": "Open Graph tags on /p/:id, added by the worker (chat apps and social sites run no scripts). Sharing a painting in WhatsApp/Signal/Facebook then shows the painting instead of a bare link.",
+  "archived": false,
+  "color": "#49652b",
+  "tags": [],
+  "supportingConnections": [],
+  "supportedIdeas": [
+    "f8aaafd1-4210-4462-996a-c8153536583c"
+  ],
+  "committedIn": [],
+  "status": {
+    "state": "implemented",
+    "comment": "6cb79bb: server/preview.ts (HTMLRewriter) on /p/* (run_worker_first), og:title/description/image(+size)/site_name, twitter:card. Verified on local dev: tags present, og:image URL serves image/jpeg, unknown id returns the plain page, tab title follows flipping and resets on Esc. Not deployed yet; not checked with a real chat app's link preview.",
+    "date": 1794846388040
+  },
+  "intrinsicValue": 0,
+  "cost": 0.5,
+  "selfWeight": 1,
+  "duration": 1,
+  "costVariance": 0,
+  "valueVariance": 0
+}
