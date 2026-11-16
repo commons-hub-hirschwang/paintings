@@ -3,6 +3,7 @@ import type { WebVariant } from '../shared/image-variants'
 import type { Painting, PublicPainting } from '../shared/types'
 
 export type { Painting, PublicPainting }
+export { formatPrice } from '../shared/pricing'
 
 export const imageUrl = (painting: Pick<Painting, 'id' | 'variants_version'>, variant: WebVariant) =>
 	`/img/${painting.id}/${variant}.jpg?v=${painting.variants_version}`
@@ -13,4 +14,3 @@ export async function loadPaintings() {
 	paintings.value = await (await fetch('/api/paintings')).json()
 }
 
-export const formatPrice = (eur: number | null) => (eur ? `${eur.toLocaleString('de-AT')} €` : 'price on request')

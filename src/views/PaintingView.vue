@@ -144,6 +144,11 @@ watch(
 	{ immediate: true },
 )
 
+// the tab shows the painting's name, as the share preview does (server/preview.ts); the site's own title elsewhere
+const siteTitle = document.querySelector('meta[property="og:site_name"]')?.getAttribute('content') ?? document.title
+watch(painting, (p) => (document.title = p ? `${p.title || 'Untitled'} – ${siteTitle}` : siteTitle), { immediate: true })
+onBeforeUnmount(() => (document.title = siteTitle))
+
 // the whole page takes the painting's average color, text in contrast to it
 usePageColors(() => painting.value && wallColors(painting.value.id, painting.value.color))
 

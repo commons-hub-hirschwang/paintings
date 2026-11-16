@@ -9,6 +9,8 @@ import type { Role, User } from '../shared/types'
 export type Bindings = {
 	DB: D1Database
 	IMAGES: R2Bucket
+	// the built pages (assets.binding in wrangler.jsonc)
+	ASSETS: Fetcher
 	// `wrangler secret put USERS --env commons`, locally in .dev.vars
 	USERS: string
 	ALLOW_EMPTY_PASSWORDS?: string

@@ -20,6 +20,8 @@ export function priceFunction(formula: string): PriceFn {
 	}
 }
 
+export const formatPrice = (eur: number | null) => (eur ? `${eur.toLocaleString('de-AT')} €` : 'price on request')
+
 // examples shown next to the formula on /admin
 export const priceExamples = [
 	{ widthCm: 30, heightCm: 40, rating: 5 },

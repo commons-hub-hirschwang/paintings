@@ -3,6 +3,7 @@ import { imageKey, isWebVariant } from '../shared/image-variants'
 import { publicStatuses, type PublicPainting } from '../shared/types'
 import { currentUser, login, logout, type Env } from './auth'
 import { getPriceFunction } from './settings'
+import { withPreview } from './preview'
 import type { PriceFn } from '../shared/pricing'
 import admin from './routes/admin'
 import capture from './routes/capture'
@@ -49,6 +50,15 @@ app.get('/img/:id/:variant{[a-z]+\\.jpg}', async (c) => {
 			etag: object.httpEtag,
 		},
 	})
+})
+
+// a painting's page: the app's page, with its share preview
+app.get('/p/:id', async (c) => {
+	const page = await c.env.ASSETS.fetch(new URL('/', c.req.url))
+	const painting = await c.env.DB.prepare(`${publicSelect} AND p.id = ?`)
+		.bind(c.req.param('id'))
+		.first<Rated>()
+	return painting ? withPreview(page, withPrice(await getPriceFunction(c.env.DB))(painting), c.req.url) : page
 })
 
 // ---------- auth ----------
