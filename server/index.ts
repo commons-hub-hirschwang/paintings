@@ -1,6 +1,6 @@
 import { Hono } from 'hono'
 import { imageKey, isWebVariant } from '../shared/image-variants'
-import type { PublicPainting } from '../shared/types'
+import { publicStatuses, type PublicPainting } from '../shared/types'
 import { currentUser, login, logout, type Env } from './auth'
 import { getPriceFunction } from './settings'
 import type { PriceFn } from '../shared/pricing'
@@ -16,7 +16,7 @@ const app = new Hono<Env>()
 const publicSelect = `SELECT p.id, p.title, p.width_cm, p.height_cm, p.material, p.status, p.variants_version, p.color, p.created_at,
 	NULL AS stack, NULL AS number,
 	(SELECT AVG(score) FROM ratings WHERE painting_id = p.id) AS rating
-	FROM paintings p WHERE p.status NOT IN ('draft', 'private') AND p.deleted_at IS NULL AND p.variants_version IS NOT NULL`
+	FROM paintings p WHERE p.status IN (${publicStatuses.map((status) => `'${status}'`).join(', ')}) AND p.deleted_at IS NULL AND p.variants_version IS NOT NULL`
 
 type Rated = PublicPainting & { rating: number | null }
 // price from rating × size (formula on /admin); the rating itself is not published

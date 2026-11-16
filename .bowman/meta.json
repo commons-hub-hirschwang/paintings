@@ -61,5 +61,14 @@
   "phaseActiveLevel": 0,
   "rootPhaseIds": [],
   "linkedRepos": [],
-  "repoId": "304784ef-8e88-4e48-b539-9f61289349a0"
+  "repoId": "304784ef-8e88-4e48-b539-9f61289349a0",
+  "layout": {
+    "spacing": 1,
+    "memory": 1,
+    "length": 1.5,
+    "semantic": 0.1,
+    "space": 5,
+    "separation": 4,
+    "importance": 0.5
+  }
 }

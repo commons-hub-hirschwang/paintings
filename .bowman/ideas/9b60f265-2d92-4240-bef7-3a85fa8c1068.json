@@ -1,0 +1,32 @@
+{
+  "id": "9b60f265-2d92-4240-bef7-3a85fa8c1068",
+  "text": "nice UI",
+  "description": "",
+  "archived": false,
+  "color": "#5e7234",
+  "tags": [],
+  "supportingConnections": [
+    {
+      "ideaId": "8ea2b442-f7d6-4a9c-a98b-d28446a6a420",
+      "relativePosition": [
+        -0.79,
+        -2.21
+      ],
+      "weight": 1
+    }
+  ],
+  "supportedIdeas": [
+    "f8aaafd1-4210-4462-996a-c8153536583c"
+  ],
+  "committedIn": [],
+  "status": {
+    "state": "open",
+    "comment": "",
+    "date": 1794568545461
+  },
+  "intrinsicValue": 0,
+  "selfWeight": 1,
+  "duration": 1,
+  "costVariance": 0,
+  "valueVariance": 0
+}

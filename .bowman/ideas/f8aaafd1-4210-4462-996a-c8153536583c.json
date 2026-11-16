@@ -34,8 +34,8 @@
     {
       "ideaId": "4978a19e-e61c-4962-9d4d-02fd6145f6b2",
       "relativePosition": [
-        3.6,
-        -1.04
+        -3.46,
+        3.61
       ],
       "weight": 1,
       "hypothesis": "Computed prices are what the shop displays and charges"
@@ -58,6 +58,14 @@
       ],
       "weight": 1,
       "hypothesis": "Named paintings are more appealing to buyers than 'Untitled'"
+    },
+    {
+      "ideaId": "9b60f265-2d92-4240-bef7-3a85fa8c1068",
+      "relativePosition": [
+        -0.56,
+        -3.44
+      ],
+      "weight": 1.0459770114942528
     }
   ],
   "supportedIdeas": [

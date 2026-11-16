@@ -1,0 +1,23 @@
+{
+  "id": "8ea2b442-f7d6-4a9c-a98b-d28446a6a420",
+  "text": "when going next and previous, animate the current image slide too.",
+  "description": "currently the current image vanishes suddenly while the target image slides in. slide both. \nwhen immage has not come to rest at target position while a new slide is triggered offset to match current position. ",
+  "archived": false,
+  "color": "#557436",
+  "tags": [],
+  "supportingConnections": [],
+  "supportedIdeas": [
+    "9b60f265-2d92-4240-bef7-3a85fa8c1068"
+  ],
+  "committedIn": [],
+  "status": {
+    "state": "open",
+    "comment": "",
+    "date": 1794568704249
+  },
+  "intrinsicValue": 0,
+  "selfWeight": 1,
+  "duration": 1,
+  "costVariance": 0,
+  "valueVariance": 0
+}

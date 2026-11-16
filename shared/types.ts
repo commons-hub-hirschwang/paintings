@@ -1,6 +1,17 @@
-// draft and private don't show in the gallery
-export type PaintingStatus = 'draft' | 'private' | 'available' | 'reserved' | 'sold'
-export const paintingStatuses: PaintingStatus[] = ['draft', 'private', 'available', 'reserved', 'sold']
+// The statuses a painting can have, in the order the admin lists them. public: shown in the gallery. Add or change
+// statuses here (the database accepts any name, the server checks against this list). draft, available, reserved and sold
+// also have behaviour in code (new uploads, the shop): keep them.
+export const statusConfig = {
+	draft: { public: false }, // captured, not reviewed yet
+	private: { public: false }, // not public, on purpose
+	'different artist': { public: false }, // not by the artist of this gallery
+	available: { public: true },
+	reserved: { public: true },
+	sold: { public: true },
+} satisfies Record<string, { public: boolean }>
+export type PaintingStatus = keyof typeof statusConfig
+export const paintingStatuses = Object.keys(statusConfig) as PaintingStatus[]
+export const publicStatuses = paintingStatuses.filter((status) => statusConfig[status].public)
 
 export type Painting = {
 	id: string

@@ -1,0 +1,23 @@
+{
+  "id": "d722985c-6238-4647-9a74-2842270230d6",
+  "text": "add \"different author\" status. Hidden in public gallery",
+  "description": "",
+  "archived": false,
+  "color": "#2b2f61",
+  "tags": [],
+  "supportingConnections": [],
+  "supportedIdeas": [
+    "ad5688bd-d88a-4128-8c41-00ea2bfc4429"
+  ],
+  "committedIn": [],
+  "status": {
+    "state": "open",
+    "comment": "",
+    "date": 1794567894499
+  },
+  "intrinsicValue": 0,
+  "selfWeight": 1,
+  "duration": 1,
+  "costVariance": 0,
+  "valueVariance": 0
+}
