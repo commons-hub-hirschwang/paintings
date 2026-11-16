@@ -11,9 +11,9 @@
   ],
   "committedIn": [],
   "status": {
-    "state": "human-dependent",
-    "comment": "Physical setup in the attic: tripod, marked painting position, lighting.",
-    "date": 1793609516481
+    "state": "implemented",
+    "comment": "Rig set up in the attic; the user has done several capture sessions with it (calibrated at 2.51 m, 208 paintings captured in project hirschwangerhof-v2).",
+    "date": 1794825234936
   },
   "intrinsicValue": 0,
   "cost": 1,

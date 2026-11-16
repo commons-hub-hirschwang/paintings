@@ -1,0 +1,41 @@
+{
+  "id": "5744672f-75f8-4735-a367-91676ac3f93a",
+  "text": "Offer this as a service for other artists",
+  "description": "Artists (or their estates) get their work digitalized, rated, priced and sold through their own gallery website, using the capture tool and gallery built here. The attic paintings are the first case.",
+  "archived": false,
+  "color": "#666666",
+  "tags": [],
+  "supportingConnections": [
+    {
+      "ideaId": "0840cc33-84a1-43a4-b21d-ead616fc08a3",
+      "relativePosition": [
+        -3.57,
+        1.15
+      ],
+      "weight": 1,
+      "hypothesis": "The attic paintings prove the flow end to end (capture, rating, pricing, selling) and serve as the reference case to show other artists"
+    },
+    {
+      "ideaId": "1a3df8d5-8405-46ff-b2dc-f7830497420d",
+      "relativePosition": [
+        -3.58,
+        1.11
+      ],
+      "weight": 1,
+      "hypothesis": "One capture project and gallery deployment per client makes taking on another artist a setup step, not a rebuild"
+    }
+  ],
+  "supportedIdeas": [],
+  "committedIn": [],
+  "status": {
+    "state": "open",
+    "comment": "",
+    "date": 1794825242599
+  },
+  "intrinsicValue": 0,
+  "cost": 2,
+  "selfWeight": 1,
+  "duration": 1,
+  "costVariance": 0,
+  "valueVariance": 0
+}

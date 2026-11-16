@@ -13,7 +13,8 @@
         3.21
       ],
       "weight": 1,
-      "hypothesis": "A constant camera distance makes pixel size proportional to real size, so one calibration serves all paintings"
+      "hypothesis": "A constant camera distance makes pixel size proportional to real size, so one calibration serves all paintings",
+      "reflection": "Held: one distance calibration (2.51 m) is reused across sessions via the 'same distance as before?' prompt."
     },
     {
       "ideaId": "48d13592-5c8d-44f9-9854-c3943915d821",

@@ -11,9 +11,9 @@
   ],
   "committedIn": [],
   "status": {
-    "state": "open",
-    "comment": "",
-    "date": 1794568704249
+    "state": "implemented",
+    "comment": "dff82ef: leaving painting copied to a fixed image and slid out by the same distance the new one slides in (WAAPI, 350 ms ease-out), both starting from the current visual offset. Verified locally at 800 px: second ArrowRight at 200 ms makes the half-arrived painting leave from x=407 (not its rest place), the next follows at the same spacing; copies removed after. Not deployed yet; swipe path not tested on a touch device.",
+    "date": 1794825336539
   },
   "intrinsicValue": 0,
   "selfWeight": 1,

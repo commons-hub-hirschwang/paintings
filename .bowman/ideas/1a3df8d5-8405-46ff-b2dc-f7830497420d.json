@@ -16,7 +16,9 @@
       "hypothesis": "Per-client projects in the capture tool make serving multiple collections practical"
     }
   ],
-  "supportedIdeas": [],
+  "supportedIdeas": [
+    "5744672f-75f8-4735-a367-91676ac3f93a"
+  ],
   "committedIn": [],
   "status": {
     "state": "open",
