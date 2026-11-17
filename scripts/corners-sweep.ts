@@ -7,7 +7,6 @@ import { spawnSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-const THRESHOLD = 20
 const BIG = 80
 const arg = (name: string, fallback: string) => {
 	const i = process.argv.indexOf(`--${name}`)
@@ -18,7 +17,7 @@ const trialsFrom = arg('trials', 'captures/corner-eval-all/baseline.json')
 const flags = new Set(['--jobs', '--trials'])
 const sets = process.argv.slice(2).filter((a, i, all) => !flags.has(a) && !flags.has(all[i - 1]!))
 
-type Report = { id: string; oneShot: { errors: number[] | null; ms: number }; corrections: { errors: number[] }[] }
+type Report = { id: string; tolerance: number[]; oneShot: { errors: number[] | null; ms: number }; corrections: { errors: number[] }[] }
 const big = (JSON.parse(readFileSync(trialsFrom, 'utf8')) as (Report & { quads: { oneShot: unknown } })[])
 	.filter((r) => !r.oneShot.errors || Math.max(...r.oneShot.errors) > BIG)
 	.map((r) => r.id)
@@ -30,15 +29,15 @@ function run(set: string, out: string, extra: string[]): Report[] {
 	return JSON.parse(readFileSync(join(out, 'report.json'), 'utf8'))
 }
 
-const ok = (errors: number[] | null) => !!errors && Math.max(...errors) <= THRESHOLD
+const ok = (errors: number[] | null, tolerance: number[]) => !!errors && errors.every((e, k) => e <= tolerance[k]!)
 const rows: string[] = []
 for (const [i, set] of sets.entries()) {
 	const oneShot = run(set, join('captures', 'corner-sweep', `${i}-one-shot`), ['--count', '100000', '--one-shot'])
 	const trials = run(set, join('captures', 'corner-sweep', `${i}-trials`), ['--only', big.join(','), '--from', trialsFrom])
-	const all = trials.flatMap((r) => r.corrections)
+	const all = trials.flatMap((r) => r.corrections.map((t) => ok(t.errors, r.tolerance)))
 	const seconds = oneShot.reduce((s, r) => s + r.oneShot.ms, 0) / oneShot.length / 1000
-	const failed = oneShot.filter((r) => !ok(r.oneShot.errors)).map((r) => r.id.slice(0, 4))
-	const row = `${(set || '(defaults)').padEnd(60)} one shot ${oneShot.filter((r) => ok(r.oneShot.errors)).length}/${oneShot.length}  trials ${all.filter((t) => ok(t.errors)).length}/${all.length}  paintings ${trials.filter((r) => r.corrections.length && r.corrections.every((t) => ok(t.errors))).length}/${trials.filter((r) => r.corrections.length).length}  ${seconds.toFixed(1)}s  off: ${failed.join(' ')}`
+	const failed = oneShot.filter((r) => !ok(r.oneShot.errors, r.tolerance)).map((r) => r.id.slice(0, 4))
+	const row = `${(set || '(defaults)').padEnd(60)} one shot ${oneShot.filter((r) => ok(r.oneShot.errors, r.tolerance)).length}/${oneShot.length}  trials ${all.filter(Boolean).length}/${all.length}  paintings ${trials.filter((r) => r.corrections.length && r.corrections.every((t) => ok(t.errors, r.tolerance))).length}/${trials.filter((r) => r.corrections.length).length}  ${seconds.toFixed(1)}s  off: ${failed.join(' ')}`
 	console.log(row)
 	rows.push(row)
 }

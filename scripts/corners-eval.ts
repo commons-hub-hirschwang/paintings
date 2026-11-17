@@ -7,6 +7,8 @@
 //     A trial succeeds when all 4 corners are within THRESHOLD afterwards: one placed corner should be enough.
 // Writes <out>/report.json and, for every painting off after one shot, <out>/<n>-<id>.jpg: stored corners green,
 // one shot red, after the first trial blue (the placed corner circled).
+// scripts/corners-truth.json (from scripts/corners-review.ts feedback, by painting id) corrects the stored corners: `corners`
+// replaces some, `loose` corners count as right within LOOSE (stored roughly right), `ignore` drops the painting.
 // --explain: per miss, whether the truth was no candidate or scored lower (slow). --one-shot: case 1 only. --set name=value: bridge/detect.ts params. --only id,id: just these paintings.
 import { existsSync, rmSync } from 'node:fs'
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
@@ -19,6 +21,9 @@ import type { Point, Quad } from '../shared/geometry'
 
 const THRESHOLD = 20 // px: a corner further off counts as wrong
 const BIG = 80 // px: a corner this far off is one the hand corrects
+const LOOSE = 40 // px: THRESHOLD for corners whose stored position is only roughly right
+type Correction = { ignore?: boolean; loose?: number[]; corners?: Record<string, Point> }
+const corrections: Record<string, Correction> = JSON.parse(await readFile(join('scripts', 'corners-truth.json'), 'utf8'))
 
 const arg = (name: string, fallback: string) => {
 	const i = process.argv.indexOf(`--${name}`)
@@ -46,11 +51,13 @@ for (const set of sets) {
 
 const projectDir = join('captures', 'projects', project)
 
-type Case = { n: number; id: string; photo: string; truth: Quad; hint: Quad | null }
+// tolerance: per corner, how far off it may be and still count as right
+type Case = { n: number; id: string; photo: string; truth: Quad; tolerance: number[]; hint: Quad | null }
 type Result = {
 	n: number
 	id: string
 	photo: string
+	tolerance: number[]
 	error?: string
 	oneShot: { errors: number[] | null; ms: number; why?: string }
 	// per trial: the corner placed by hand (index into truth), errors after the snap
@@ -70,8 +77,11 @@ async function cases(): Promise<Case[]> {
 		.sort((a, b) => a.createdAt - b.createdAt)
 	const all = usable.map((p, i): Case => {
 		const full = (q: LocalPainting) => q.original!.quad.map((c) => ({ x: c.x + q.original!.crop.left, y: c.y + q.original!.crop.top })) as Quad
-		return { n: i, id: p.id, photo: p.original!.photo, truth: full(p), hint: i > 0 ? full(usable[i - 1]!) : null }
-	})
+		const fix = corrections[p.id] ?? {}
+		const truth = full(p).map((c, k) => fix.corners?.[k] ?? c) as Quad
+		const tolerance = truth.map((_, k) => (fix.loose?.includes(k) ? LOOSE : THRESHOLD))
+		return { n: i, id: p.id, photo: p.original!.photo, truth, tolerance, hint: i > 0 ? full(usable[i - 1]!) : null }
+	}).filter((c) => !corrections[c.id]?.ignore)
 	return only.length ? all.filter((c) => only.some((o) => c.id.startsWith(o))) : all.slice(-count)
 }
 
@@ -89,6 +99,7 @@ const verdict = (e: Explanation) =>
 		: e.truth.score > (e.winner?.score ?? -Infinity)
 			? `no candidate: truth ${e.truth.score.toFixed(2)} > winner ${e.winner?.score.toFixed(2)}, nearest candidate ${e.nearest.toFixed(0)}px`
 			: `scoring: winner ${e.winner!.score.toFixed(2)} ≥ truth ${e.truth.score.toFixed(2)}`
+const ok = (errors: number[] | null, tolerance: number[]) => !!errors && errors.every((e, k) => e <= tolerance[k]!)
 const errorsOf = (quad: Quad, truth: Quad) => aligned(quad, truth).map((p, k) => Math.hypot(p.x - truth[k]!.x, p.y - truth[k]!.y))
 
 async function evaluate(c: Case): Promise<Result> {
@@ -100,11 +111,12 @@ async function evaluate(c: Case): Promise<Result> {
 		n: c.n,
 		id: c.id,
 		photo: c.photo,
+		tolerance: c.tolerance,
 		oneShot: { errors: detection && errorsOf(detection.quad, c.truth), ms },
 		corrections: [],
 		quads: { truth: c.truth, oneShot: detection?.quad ?? null, corrected: null },
 	}
-	const off = (errors: number[] | null) => !errors || Math.max(...errors) > THRESHOLD
+	const off = (errors: number[] | null) => !ok(errors, c.tolerance)
 	if (explaining && off(result.oneShot.errors)) result.oneShot.why = verdict(await explainDetection(file, c.truth, c.hint))
 	if (oneShotOnly) return result
 	const start: Quad | null = from ? (JSON.parse(await readFile(from, 'utf8')) as Result[]).find((r) => r.id === c.id)?.quads.oneShot ?? null : (detection?.quad ?? null)
@@ -158,7 +170,7 @@ if (shard) {
 	for (const c of mine)
 		results.push(
 			await evaluate(c).catch((error): Result => ({
-				n: c.n, id: c.id, photo: c.photo, error: String(error?.stack ?? error), oneShot: { errors: null, ms: 0 }, corrections: [],
+				n: c.n, id: c.id, photo: c.photo, tolerance: c.tolerance, error: String(error?.stack ?? error), oneShot: { errors: null, ms: 0 }, corrections: [],
 				quads: { truth: c.truth, oneShot: null, corrected: null },
 			})),
 		)
@@ -188,20 +200,20 @@ if (shard) {
 	await writeFile(join(out, 'report.json'), JSON.stringify(results, null, '\t'))
 	for (const r of results) {
 		if (r.error) console.log(`#${String(r.n).padStart(3)} ${r.id.slice(0, 8)} ERROR ${r.error}`)
-		const off = !r.oneShot.errors || Math.max(...r.oneShot.errors) > THRESHOLD
+		const off = !ok(r.oneShot.errors, r.tolerance)
 		console.log(`#${String(r.n).padStart(3)} ${r.id.slice(0, 8)} ${off ? '✗' : '✓'} one shot ${fmt(r.oneShot.errors)}  ${(r.oneShot.ms / 1000).toFixed(1)}s${r.oneShot.why ? `  — ${r.oneShot.why}` : ''}`)
-		for (const [k, c] of r.corrections.entries()) console.log(`       ${Math.max(...c.errors) <= THRESHOLD ? '✓' : '✗'} corner ${c.corner} placed${c.unsnapped ? ' (unsnapped)' : ''}: ${fmt(c.errors)}  ${(c.ms / 1000).toFixed(1)}s${c.why ? `  — ${c.why}` : ''}`)
+		for (const [k, c] of r.corrections.entries()) console.log(`       ${ok(c.errors, r.tolerance) ? '✓' : '✗'} corner ${c.corner} placed${c.unsnapped ? ' (unsnapped)' : ''}: ${fmt(c.errors)}  ${(c.ms / 1000).toFixed(1)}s${c.why ? `  — ${c.why}` : ''}`)
 		if (off) await overlay(r, join(out, `${String(r.n).padStart(3, '0')}-${r.id.slice(0, 8)}.jpg`))
 	}
-	const oneShotOk = results.filter((r) => r.oneShot.errors && Math.max(...r.oneShot.errors) <= THRESHOLD)
-	const ok = oneShotOk.length
+	const oneShotOk = results.filter((r) => ok(r.oneShot.errors, r.tolerance))
+	const right = oneShotOk.length
 	const trials = results.flatMap((r) => r.corrections)
-	const fixed = trials.filter((t) => Math.max(...t.errors) <= THRESHOLD).length
-	const paintingsFixed = results.filter((r) => r.corrections.length && r.corrections.every((t) => Math.max(...t.errors) <= THRESHOLD)).length
+	const fixed = results.flatMap((r) => r.corrections.filter((t) => ok(t.errors, r.tolerance))).length
+	const paintingsFixed = results.filter((r) => r.corrections.length && r.corrections.every((t) => ok(t.errors, r.tolerance))).length
 	const median = (v: number[]) => v.sort((a, b) => a - b)[Math.floor(v.length / 2)] ?? NaN
 	const good = oneShotOk.map((r) => Math.max(...r.oneShot.errors!))
 	const seconds = results.map((r) => r.oneShot.ms / 1000)
-	console.log(`\none shot within ${THRESHOLD}px: ${ok}/${results.length} (median max error of those ${median(good).toFixed(1)}px), mean ${(seconds.reduce((a, b) => a + b, 0) / seconds.length).toFixed(1)}s per photo`)
+	console.log(`\none shot right (within ${THRESHOLD}px, ${LOOSE}px for loose corners): ${right}/${results.length} (median max error of those ${median(good).toFixed(1)}px), mean ${(seconds.reduce((a, b) => a + b, 0) / seconds.length).toFixed(1)}s per photo`)
 	if (!oneShotOnly)
 		console.log(
 			`one placed corner (${click}px off) enough: ${fixed}/${trials.length} trials; paintings fixed whichever corner is placed: ${paintingsFixed}/${results.filter((r) => r.corrections.length).length}`,
