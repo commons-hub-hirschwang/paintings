@@ -2,8 +2,8 @@
 import { computed, ref } from 'vue'
 import { authed } from '@/auth'
 import { imageUrl } from '@/api'
-import { paintingStatuses, sizeLabel, type AdminPainting, type PaintingStatus } from '../../../shared/types'
-import { act, changed, eur, namedStacks, paintings, priceOf } from './state'
+import { sizeLabel, type AdminPainting, type PaintingStatus } from '../../../shared/types'
+import { act, changed, eur, namedStacks, paintings, priceOf, statuses } from './state'
 
 const rename = (painting: AdminPainting, title: string) =>
 	act(() => authed(`/api/rate/paintings/${painting.id}/title`, { method: 'PUT', body: JSON.stringify({ title }) }))
@@ -97,7 +97,7 @@ const moveSelected = () =>
 				Status
 				<select v-model="statusFilter">
 					<option :value="null">all</option>
-					<option v-for="status in paintingStatuses" :key="status" :value="status">{{ status }}</option>
+					<option v-for="{ name: status } in statuses" :key="status" :value="status">{{ status }}</option>
 				</select>
 			</label>
 			<label>
@@ -118,7 +118,7 @@ const moveSelected = () =>
 				Status of {{ picked.length }} selected
 				<select value="" @change="setSelectedStatus(($event.target as HTMLSelectElement).value as PaintingStatus)">
 					<option value="" disabled>set to…</option>
-					<option v-for="status in paintingStatuses" :key="status">{{ status }}</option>
+					<option v-for="{ name: status } in statuses" :key="status">{{ status }}</option>
 				</select>
 			</label>
 			<button v-if="pickedInStack.length" @click="setSelectedTakenOut(true)">Remove from stack</button>
@@ -199,7 +199,7 @@ const moveSelected = () =>
 					<td>{{ eur(priceOf(painting)) }}</td>
 					<td>
 						<select :value="painting.status" @change="setStatus(painting, ($event.target as HTMLSelectElement).value as PaintingStatus)">
-							<option v-for="status in paintingStatuses" :key="status">{{ status }}</option>
+							<option v-for="{ name: status } in statuses" :key="status">{{ status }}</option>
 						</select>
 					</td>
 					<td>

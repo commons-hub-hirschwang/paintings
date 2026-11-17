@@ -1,12 +1,13 @@
 import { Hono } from 'hono'
 import { FormulaError } from '../../shared/expr'
 import { defaultPriceFormula, priceExamples, priceFunction } from '../../shared/pricing'
-import { paintingStatuses, type AdminPainting, type Painting, type PaintingLogEntry, type UploadKey } from '../../shared/types'
+import { builtInStatuses, type AdminPainting, type Painting, type PaintingLogEntry, type UploadKey } from '../../shared/types'
 import { requireRole, sha256, type Env } from '../auth'
 import { changePaintings } from '../log'
 import { getPriceFormula, getPriceFunction, putSetting } from '../settings'
 import { connectStripe, disconnectStripe, stripeStatus } from '../stripe'
 import { cleanStackName, nextNumberSql, stackIndexSql } from '../stacks'
+import { cleanStatusName, listStatuses, statusExists } from '../statuses'
 
 const admin = new Hono<Env>()
 admin.use(requireRole('admin'))
@@ -59,7 +60,7 @@ admin.put('/pricing', async (c) => {
 // status of many paintings at once (selection on /admin)
 admin.patch('/paintings', async (c) => {
 	const { ids, status } = await c.req.json<{ ids: string[]; status: Painting['status'] }>()
-	if (!paintingStatuses.includes(status)) return c.json({ error: 'invalid status' }, 400)
+	if (!(await statusExists(c.env.DB, status))) return c.json({ error: 'invalid status' }, 400)
 	if (!Array.isArray(ids) || !ids.length) return c.json({ error: 'no paintings selected' }, 400)
 	await changePaintings(c.env.DB, c.get('user').name, ...ids.map((id) => c.env.DB.prepare(`UPDATE paintings SET status = ? WHERE id = ?`).bind(status, id)))
 	return c.json({ ok: true })
@@ -112,7 +113,7 @@ admin.put('/paintings/stack', async (c) => {
 
 admin.patch('/paintings/:id', async (c) => {
 	const body = await c.req.json<Partial<Pick<Painting, 'title' | 'width_cm' | 'height_cm' | 'status'>>>()
-	if (body.status && !paintingStatuses.includes(body.status)) return c.json({ error: 'invalid status' }, 400)
+	if ('status' in body && !(await statusExists(c.env.DB, body.status))) return c.json({ error: 'invalid status' }, 400)
 	const fields = (['title', 'width_cm', 'height_cm', 'status'] as const).filter((f) => f in body)
 	if (!fields.length) return c.json({ error: 'nothing to update' }, 400)
 	const [{ meta }] = (await changePaintings(
@@ -177,6 +178,53 @@ admin.post('/stacks/split', async (c) => {
 		c.env.DB.prepare(`UPDATE paintings SET stack = ? WHERE stack = ? AND number < ?`).bind(lower, body.stack, body.at),
 		...renumber(c.env.DB, body.stack, 'AND number >= ?', [body.at], -start.start, upper),
 	)
+	return c.json({ ok: true })
+})
+
+// ---------- statuses ----------
+
+admin.get('/statuses', async (c) => c.json(await listStatuses(c.env.DB)))
+
+// a new one, listed last
+admin.post('/statuses', async (c) => {
+	const body = await c.req.json<{ name: string; public: boolean }>()
+	const name = cleanStatusName(body.name)
+	if (!name) return c.json({ error: 'invalid name' }, 400)
+	if (await statusExists(c.env.DB, name)) return c.json({ error: `there already is a status "${name}"` }, 400)
+	await c.env.DB.prepare(`INSERT INTO statuses (name, public, position) VALUES (?, ?, (SELECT COALESCE(MAX(position), -1) + 1 FROM statuses))`)
+		.bind(name, body.public ? 1 : 0)
+		.run()
+	return c.json({ ok: true }, 201)
+})
+
+// public or not, and the name: renaming carries all its paintings along (logged per painting). Built-in ones keep their name
+admin.patch('/statuses/:name', async (c) => {
+	const old = c.req.param('name')
+	const body = await c.req.json<{ public?: boolean; name?: string }>()
+	if (!(await statusExists(c.env.DB, old))) return c.notFound()
+	if (typeof body.public === 'boolean') await c.env.DB.prepare(`UPDATE statuses SET public = ? WHERE name = ?`).bind(body.public ? 1 : 0, old).run()
+	if (body.name !== undefined && body.name !== old) {
+		const name = cleanStatusName(body.name)
+		if (!name) return c.json({ error: 'invalid name' }, 400)
+		if (builtInStatuses.includes(old)) return c.json({ error: `"${old}" is built in and keeps its name` }, 400)
+		if (await statusExists(c.env.DB, name)) return c.json({ error: `there already is a status "${name}"` }, 400)
+		await changePaintings(
+			c.env.DB,
+			c.get('user').name,
+			c.env.DB.prepare(`UPDATE statuses SET name = ? WHERE name = ?`).bind(name, old),
+			c.env.DB.prepare(`UPDATE paintings SET status = ? WHERE status = ?`).bind(name, old),
+		)
+	}
+	return c.json({ ok: true })
+})
+
+// only once no painting has it (deleted ones included), so none is left with an unknown status
+admin.delete('/statuses/:name', async (c) => {
+	const name = c.req.param('name')
+	if (builtInStatuses.includes(name)) return c.json({ error: `"${name}" is built in and can't be removed` }, 400)
+	const { count } = (await c.env.DB.prepare(`SELECT COUNT(*) AS count FROM paintings WHERE status = ?`).bind(name).first<{ count: number }>())!
+	if (count) return c.json({ error: `${count} painting(s) still have "${name}": give them another status first` }, 400)
+	await c.env.DB.prepare(`DELETE FROM statuses WHERE name = ?`).bind(name).run()
 	return c.json({ ok: true })
 })
 

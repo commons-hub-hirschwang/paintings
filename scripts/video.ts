@@ -8,7 +8,6 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import sharp from 'sharp'
-import { paintingStatuses, statusConfig } from '../shared/types'
 
 const [from = 0.3, to = 0.1] = process.argv.slice(2).map(Number)
 const SIZE = { width: 1080, height: 1920 }
@@ -19,8 +18,8 @@ const crops = join(exports, 'crops')
 
 type Row = { id: string; status: string; stack: string; number: number }
 // drafts too (not reviewed yet), but none hidden on purpose (private, different artist, …)
-const hidden = paintingStatuses.filter((status) => status !== 'draft' && !statusConfig[status].public)
-const query = `SELECT id, status, stack, number FROM paintings WHERE deleted_at IS NULL AND status NOT IN (${hidden.map((status) => `'${status}'`).join(', ')}) ORDER BY created_at`
+const query = `SELECT id, status, stack, number FROM paintings WHERE deleted_at IS NULL
+	AND status NOT IN (SELECT name FROM statuses WHERE public = 0 AND name != 'draft') ORDER BY created_at`
 const wrangler = execFileSync('npx', ['wrangler', 'd1', 'execute', 'paintings', '--env', 'commons', '--remote', '--json', '--command', query], {
 	encoding: 'utf8',
 	stdio: ['ignore', 'pipe', 'inherit'],

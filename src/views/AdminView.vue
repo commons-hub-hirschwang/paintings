@@ -9,11 +9,13 @@ import OrdersTab from './admin/OrdersTab.vue'
 import PaintingsTab from './admin/PaintingsTab.vue'
 import PriceTab from './admin/PriceTab.vue'
 import StacksTab from './admin/StacksTab.vue'
+import StatusesTab from './admin/StatusesTab.vue'
 import { error, load } from './admin/state'
 
 const tabs = {
 	stacks: { label: 'Stacks', component: StacksTab },
 	paintings: { label: 'Paintings', component: PaintingsTab },
+	statuses: { label: 'Statuses', component: StatusesTab },
 	price: { label: 'Price & payments', component: PriceTab },
 	orders: { label: 'Orders', component: OrdersTab },
 	keys: { label: 'Keys', component: KeysTab },
@@ -129,12 +131,12 @@ onBeforeUnmount(() => clearInterval(live))
 
 	& .bulk {
 		align-items: flex-end;
+	}
 
-		& .check {
-			flex-direction: row;
-			align-items: center;
-			gap: 0.5rem;
-		}
+	& .check {
+		flex-direction: row;
+		align-items: center;
+		gap: 0.5rem;
 	}
 
 	& tr.deleted {

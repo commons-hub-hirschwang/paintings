@@ -1,10 +1,11 @@
-// What the tabs of /admin share: the paintings, kept up to date, and the price formula being edited (the table previews it).
+// What the tabs of /admin share: the paintings and statuses, kept up to date, and the price formula being edited (the table previews it).
 import { computed, ref } from 'vue'
 import { authed } from '@/auth'
-import type { AdminPainting, StripeStatus } from '../../../shared/types'
+import type { AdminPainting, Status, StripeStatus } from '../../../shared/types'
 import { priceFunction, type PriceFn } from '../../../shared/pricing'
 
 export const paintings = ref<AdminPainting[]>([])
+export const statuses = ref<Status[]>([])
 export const error = ref('')
 
 export const namedStacks = computed(() => [...new Set(paintings.value.map((p) => p.stack ?? ''))].filter(Boolean))
@@ -25,7 +26,11 @@ export const priceOf = (p: AdminPainting) => (changed.value ? preview.value.pric
 export const eur = (value: number | null | undefined) => (value ? `${value} €` : '–')
 
 export async function load() {
-	;[paintings.value, pricing.value] = await Promise.all([authed<AdminPainting[]>('/api/admin/paintings'), authed<Pricing>('/api/admin/pricing')])
+	;[paintings.value, pricing.value, statuses.value] = await Promise.all([
+		authed<AdminPainting[]>('/api/admin/paintings'),
+		authed<Pricing>('/api/admin/pricing'),
+		authed<Status[]>('/api/admin/statuses'),
+	])
 	if (!changed.value || !formula.value) formula.value = pricing.value.formula
 }
 
