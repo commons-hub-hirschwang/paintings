@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // Set the 4 painting corners: hovering magnifies the nearest corner, press anywhere and it moves with the mouse
-// (cursor hidden, Shift = 1/10 speed). Arrow keys nudge the selected corner by 1 px (Shift: 10 px), keys 1–4 select.
+// (cursor hidden, slowing to 1/10 speed over 10 s of dragging, Shift = another 1/10). Arrow keys nudge the selected corner by 1 px (Shift: 10 px), keys 1–4 select.
 // The view can be turned in quarter turns (painting photographed sideways, buttons in the parent): the parent turns the corner order
 // along (turnCorners), the photo itself stays as it is; all screen input is turned back into photo coordinates.
 // Each side shows its measured curve (bows, true to scale) and the range it may curve in.
@@ -102,9 +102,14 @@ function setCorner(index: number, point: Point) {
 }
 
 // Hover: the nearest corner is selected and shown magnified. Press anywhere: it follows the pointer
-// *relatively* (no jump), with the cursor hidden (pointer lock). Shift: 1/10 speed for precision.
+// *relatively* (no jump), with the cursor hidden (pointer lock). The longer the drag, the finer: the speed falls
+// evenly (exponentially) to 1/10 within 10 s — coarse first, then precise. Shift: another 1/10.
 let dragPoint: Point = { x: 0, y: 0 } // local, since v-model updates lag one render behind
 let lastClient: Point = { x: 0, y: 0 }
+let dragStart = 0 // event.timeStamp
+const SLOWDOWN = { seconds: 10, to: 0.1 }
+const dragSpeed = (timeStamp: number) =>
+	SLOWDOWN.to ** Math.min((timeStamp - dragStart) / 1000 / SLOWDOWN.seconds, 1)
 
 // the corner nearest to the pointer, in photo coordinates
 function nearestCorner(event: PointerEvent) {
@@ -121,6 +126,7 @@ function startDrag(event: PointerEvent) {
 	selected.value = nearestCorner(event)
 	dragPoint = { ...quad.value[selected.value]! }
 	lastClient = { x: event.clientX, y: event.clientY }
+	dragStart = event.timeStamp
 	dragging.value = true
 	loupeVisible.value = true
 	const editor = event.currentTarget as HTMLElement
@@ -146,7 +152,7 @@ function drag(event: PointerEvent) {
 	const dx = locked ? event.movementX : event.clientX - lastClient.x
 	const dy = locked ? event.movementY : event.clientY - lastClient.y
 	lastClient = { x: event.clientX, y: event.clientY }
-	const speed = event.shiftKey ? 0.1 : 1
+	const speed = dragSpeed(event.timeStamp) * (event.shiftKey ? 0.1 : 1)
 	const move = toPhoto(dx * speed, dy * speed)
 	const clamp = (value: number, max: number) => Math.min(Math.max(value, 0), max)
 	dragPoint = {

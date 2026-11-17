@@ -17,6 +17,9 @@ export const fixedSettings = {
 	fNumber: 5.6,
 	dro: 'Off', // Sony's automatic contrast changes per image
 	quality: 'RAW+JPEG (X.Fine)', // the RAW keeps exposure and colour correctable later; 'Extra Fine' for JPEG only
+	// 'Wide' lets the camera pick any contrasty spot, also frame or wall. The a6400 can't move the spot over USB (it
+	// ignores Sony's AF area position property), so it stays where it was last placed on the body: the centre.
+	focusArea: 'Flexible Spot: M',
 }
 
 // third stops from long to short
@@ -87,6 +90,7 @@ export async function setFixedSettings() {
 		'--set-config', `dro=${fixedSettings.dro}`,
 		'--set-config', `imagequality=${fixedSettings.quality}`,
 		'--set-config', 'whitebalance=Choose Color Temperature',
+		'--set-config', `focusarea=${fixedSettings.focusArea}`,
 	])
 	current = null
 }

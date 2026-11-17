@@ -113,6 +113,11 @@ function move(event: PointerEvent) {
 				{{ last ? 'Use the same painting and area as last time:' : 'Remember which one: use the same one whenever you recalibrate.' }}
 			</p>
 			<img v-if="last" class="previous" :src="bridge.colorImageUrl('reference.jpg', last.createdAt)" alt="the painting of the last calibration" />
+			<p class="muted">
+				Focus: the app switches the camera to autofocus on one spot (Flexible Spot M) for every photo. Where that spot sits
+				can only be set on the camera itself (Focus Area, then the arrow keys); it stays there. Place it bottom-centre, where
+				paintings standing on the ground always are, and on an area with some texture, otherwise the camera may not fire.
+			</p>
 			<label>
 				ISO
 				<select v-model.number="iso" :disabled="busy">

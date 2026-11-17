@@ -1,6 +1,7 @@
 <script setup lang="ts">
 // Local capture tool (pnpm capture): project → capture → corners → title/size → save offline → sync.
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch, watchEffect } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import ColorCalibration from './ColorCalibration.vue'
 import CornerEditor from './CornerEditor.vue'
 import { bridge, type Bow, type BridgeStatus, type Detection, type LocalPainting, type Photo, type SyncProgress } from './bridge'
@@ -10,11 +11,13 @@ import { estimateSizeCm, MAX_BOW, reconstruct, turnCorners, type Camera, type Qu
 const confirmedKey = () => `capture:calibration-confirmed:${status.value?.project}`
 const colorConfirmedKey = () => `capture:color-confirmed:${status.value?.project}`
 const newProject = ref('')
+const route = useRoute()
+const router = useRouter()
 
 const status = ref<BridgeStatus | null>(null)
 const askReuse = ref(false)
 const askColorReuse = ref(false)
-const calibratingColor = ref(false)
+const calibratingColor = computed(() => route.name === 'colour')
 const warnings = ref<string[]>([])
 const photo = ref<string | null>(null)
 // the saved painting brought up in the editor (null: a new photo). What a capture series keeps is restored afterwards.
@@ -131,7 +134,62 @@ const refreshStatus = () =>
 		askReuse.value = !!status.value.calibration && sessionStorage.getItem(confirmedKey()) !== 'yes'
 		askColorReuse.value = !!status.value.color && sessionStorage.getItem(colorConfirmedKey()) !== 'yes'
 	})
-refreshStatus()
+
+// the URL says where we are (router.ts): project, opened painting, colour calibration. Followed one change at a time
+const projectRoute = (project = status.value!.project!) => ({ name: 'project', params: { project } })
+let following = Promise.resolve()
+const follow = () => (following = following.then(followRoute))
+router.isReady().then(refreshStatus).then(follow)
+watch(() => route.fullPath, follow)
+
+async function followRoute() {
+	if (!status.value) return
+	const wanted = route.params.project as string | undefined
+	if (!wanted) {
+		if (status.value.project) await router.replace(projectRoute())
+		return
+	}
+	if (wanted !== status.value.project) {
+		await enterProject(wanted)
+		// not opened (the error says why): back to the one that is
+		if (wanted !== status.value.project) return void router.replace(status.value.project ? projectRoute() : { name: 'home' })
+	}
+	const id = route.name === 'painting' ? (route.params.id as string) : null
+	if (id === (editing.value?.id ?? null)) return
+	if (!id) return closeEditor()
+	const painting = paintings.value.find((p) => p.id === id)
+	if (painting?.original) return openPainting(painting)
+	error.value = painting ? 'Saved without its photo data: cannot be changed' : `No painting ${id} in ${wanted}`
+	await router.replace(projectRoute())
+}
+
+// back to the project's page: the way we came if that was it (keeps the history short), else in place
+function leave() {
+	const page = router.resolve(projectRoute()).fullPath
+	if (history.state?.back === page) router.back()
+	else router.replace(page)
+}
+
+// opened again from the list while one is open: replaces it, so Back still leads to the list
+const showPainting = (painting: LocalPainting) =>
+	router[editing.value ? 'replace' : 'push']({ name: 'painting', params: { project: status.value!.project!, id: painting.id } })
+
+// the opened painting's neighbours in the list, skipping those that can't be opened (unsaved edits are dropped, like Cancel)
+const openable = computed(() => paintings.value.filter((p) => p.original && !p.rendering))
+function neighbour(step: 1 | -1) {
+	const list = openable.value
+	const at = list.findIndex((p) => p.id === editing.value?.id)
+	return at < 0 ? undefined : list[at + step]
+}
+function step(by: 1 | -1) {
+	const painting = neighbour(by)
+	if (painting && !busy.value) showPainting(painting)
+}
+
+watchEffect(() => {
+	const project = status.value?.project
+	document.title = editing.value ? `${editing.value.title || 'Untitled'} · Capture` : project ? `${project} · Capture` : 'Capture'
+})
 
 async function answerReuse(reuse: boolean) {
 	if (!reuse) await run('Resetting calibration…', () => bridge.forgetCalibration().then(refreshStatus))
@@ -142,24 +200,32 @@ async function answerReuse(reuse: boolean) {
 function answerColorReuse(reuse: boolean) {
 	sessionStorage.setItem(colorConfirmedKey(), 'yes')
 	askColorReuse.value = false
-	calibratingColor.value = !reuse
+	if (!reuse) router.push({ name: 'colour', params: { project: status.value!.project! } })
 }
 
 async function colorCalibrated() {
-	calibratingColor.value = false
+	leave()
 	sessionStorage.setItem(colorConfirmedKey(), 'yes')
 	status.value = await bridge.status()
 }
 
-const openProject = (name: string, create = false) =>
-	run('Opening project…', async () => {
-		await bridge.openProject(name, create)
+// only from the route (followRoute): choosing a project goes to its URL
+async function enterProject(name: string) {
+	await run('Opening project…', async () => {
+		await bridge.openProject(name)
 		photo.value = null
 		editing.value = null
 		beforeEditing = null
 		lastQuad = null
+	})
+	if (!error.value) await refreshStatus()
+}
+
+const createProject = () =>
+	run('Creating project…', async () => {
+		const { project } = await bridge.openProject(newProject.value, true)
 		newProject.value = ''
-		await refreshStatus()
+		await router.push(projectRoute(project))
 	})
 
 // "New stack…" in the select asks for a name: just that name, the gallery has it from the first upload
@@ -187,7 +253,6 @@ const canSave = computed(() => !!photo.value && !!quad.value && !busy.value && (
 
 const canCapture = computed(() => !busy.value && !!status.value?.cameras.length && !!color.value)
 const capture = () => {
-	window.scrollTo({ top: 0 })
 	return run('Capturing…', async () => setPhoto(await bridge.capture()))
 }
 
@@ -251,8 +316,12 @@ function turn(direction: 1 | -1) {
 	held = turnCorners(held, direction)
 }
 function onKey(event: KeyboardEvent) {
-	// an opened painting is an overlay: Esc closes it like Cancel
-	if (event.key === 'Escape' && editing.value && !busy.value) return closeEditor()
+	// an opened painting: Esc closes it like Cancel
+	if (event.key === 'Escape' && editing.value && !busy.value) return leave()
+	if (editing.value && (event.key === 'PageDown' || event.key === 'PageUp')) {
+		event.preventDefault()
+		return step(event.key === 'PageDown' ? 1 : -1)
+	}
 	if (event.key === 's' && !(event.target instanceof HTMLInputElement) && photo.value && quad.value && !busy.value) snap()
 }
 onMounted(() => window.addEventListener('keydown', onKey))
@@ -322,7 +391,7 @@ const saveChanges = () =>
 		})
 		status.value = await bridge.status()
 		paintings.value = await bridge.paintings()
-		closeEditor()
+		leave()
 		notice.value = `Saved. ${changed.isWaiting ? 'Press Sync to send it to the website.' : ''}`
 	})
 
@@ -346,7 +415,6 @@ const save = () =>
 		title.value = ''
 		typingMaterial.value = false
 		widthCm.value = heightCm.value = ''
-		window.scrollTo({ top: 0 })
 		savedAs.value = painting.stack
 	})
 
@@ -372,12 +440,12 @@ const cm = (value: number) => value.toFixed(1)
 		<header>
 			<div>
 			<h1>Capture</h1>
-			<select v-if="status?.projects.length" :value="status.project ?? ''" @change="openProject(($event.target as HTMLSelectElement).value)">
+			<select v-if="status?.projects.length" :value="status.project ?? ''" @change="router.push(projectRoute(($event.target as HTMLSelectElement).value))">
 				<option v-if="!status.project" value="" disabled>Open project…</option>
 				<option v-for="project in status.projects" :key="project">{{ project }}</option>
 			</select>
-			<form class="actions" @submit.prevent="openProject(newProject, true)">
-				<input v-model="newProject" placeholder="New project, e.s. attic" required />
+			<form class="actions" @submit.prevent="createProject">
+				<input v-model="newProject" placeholder="New project, e.g. attic" required />
 				<button type="submit">Create</button>
 			</form>
 			</div>
@@ -397,7 +465,7 @@ const cm = (value: number) => value.toFixed(1)
 			</span>
 			</div>
 			<div v-if="status?.project">
-				<button :disabled="!!busy" @click="calibratingColor = true">Calibrate colour</button>
+				<button :disabled="!!busy" @click="router.push({ name: 'colour', params: { project: status.project } })">Calibrate colour</button>
 				<button v-if="calibration" :disabled="!!busy" @click="askReuse = true">Calibrate distance</button>
 			</div>
 		</header>
@@ -407,26 +475,13 @@ const cm = (value: number) => value.toFixed(1)
 		<p v-if="busy" class="muted">{{ busy }}</p>
 		<p v-if="notice">{{ notice }}</p>
 
-		<section v-if="askReuse" class="dialog">
-			<p>Same distance from camera to painting as before? (reuse calibration)</p>
-			<button @click="answerReuse(true)">Yes, reuse</button>
-			<button @click="answerReuse(false)">No, measure again</button>
-		</section>
-
-		<section v-else-if="askColorReuse" class="dialog">
-			<p>Same light as before? (reuse colour calibration)</p>
-			<img v-if="color" class="patch" :src="bridge.colorImageUrl('patch.jpg', color.createdAt)" alt="the white area of the last calibration" />
-			<button @click="answerColorReuse(true)">Yes, reuse</button>
-			<button @click="answerColorReuse(false)">No, calibrate again</button>
-		</section>
-
 		<ColorCalibration
-			v-else-if="status?.project && calibratingColor"
+			v-if="status?.project && calibratingColor"
 			:run="run"
 			:busy="!!busy"
 			:previous="color"
 			@done="colorCalibrated"
-			@cancel="calibratingColor = false"
+			@cancel="leave"
 		/>
 
 		<p v-else-if="status && !status.project" class="muted">Create or open a project to start.</p>
@@ -437,17 +492,31 @@ const cm = (value: number) => value.toFixed(1)
 				<p v-for="warning in color.warnings" :key="warning" class="warning">{{ warning }}</p>
 			</template>
 
-			<section v-if="!photo" class="actions">
-				<button :disabled="!canCapture" @click="capture">Capture with camera</button>
+			<!-- the session's questions, before the first capture: the rest of the page stays usable -->
+			<section v-if="!photo && askReuse" class="dialog">
+				<p>Same distance from camera to painting as before? (reuse calibration)</p>
+				<button @click="answerReuse(true)">Yes, reuse</button>
+				<button @click="answerReuse(false)">No, measure again</button>
+			</section>
+
+			<section v-else-if="!photo && askColorReuse" class="dialog">
+				<p>Same light as before? (reuse colour calibration)</p>
+				<img v-if="color" class="patch" :src="bridge.colorImageUrl('patch.jpg', color.createdAt)" alt="the white area of the last calibration" />
+				<button @click="answerColorReuse(true)">Yes, reuse</button>
+				<button @click="answerColorReuse(false)">No, calibrate again</button>
+			</section>
+
+			<section v-else-if="!photo" class="actions">
+				<button v-if="status.cameras.length" :disabled="!canCapture" @click="capture">Capture with camera</button>
 				<label class="button">
 					Upload photo
 					<input type="file" accept="image/jpeg" hidden @change="upload" />
 				</label>
 			</section>
 
-			<!-- an opened painting: over the page like in the gallery, on its wall colour -->
-			<section v-else class="editor" :class="{ overlay: editing }" :style="editing ? wallColors(bridge.thumbUrl(editing)) : undefined">
-				<div v-if="editing && (error || busy)" class="notes">
+			<!-- a photo: over the page; an opened painting like in the gallery, on its wall colour -->
+			<section v-else class="editor" :style="editing ? wallColors(bridge.thumbUrl(editing)) : undefined">
+				<div v-if="error || busy" class="notes">
 					<p v-if="error" class="error">{{ error }}</p>
 					<p v-if="busy" class="muted">{{ busy }}</p>
 				</div>
@@ -498,7 +567,7 @@ const cm = (value: number) => value.toFixed(1)
 						</label>
 						<label v-if="typingMaterial" class="grow">
 							New material
-							<input v-model="material" placeholder="e.s. Öl auf Leinwand" autofocus />
+							<input v-model="material" placeholder="e.g. Öl auf Leinwand" autofocus />
 						</label>
 					</div>
 					<div v-if="!editing" class="notes">
@@ -531,8 +600,12 @@ const cm = (value: number) => value.toFixed(1)
 							<input v-model="heightCm" type="number" min="1" step="0.1" :required="!calibration || !!editing" />
 						</label>
 						<div class="actions">
+							<template v-if="editing">
+								<button type="button" title="Previous painting (Page Up)" :disabled="!!busy || !neighbour(-1)" @click="step(-1)">‹</button>
+								<button type="button" title="Next painting (Page Down)" :disabled="!!busy || !neighbour(1)" @click="step(1)">›</button>
+							</template>
 							<button type="submit" :disabled="!canSave">{{ editing ? 'Save changes' : 'Save painting' }}</button>
-							<button type="button" :disabled="!!busy" @click="closeEditor">{{ editing ? 'Cancel' : 'Discard photo' }}</button>
+							<button type="button" :disabled="!!busy" @click="editing ? leave() : closeEditor()">{{ editing ? 'Cancel' : 'Discard photo' }}</button>
 						</div>
 					</div>
 					</fieldset>
@@ -547,9 +620,54 @@ const cm = (value: number) => value.toFixed(1)
 				</div>
 			</section>
 
+			<!-- sync to the website: above the captured paintings, the connection settings folded away -->
+			<fieldset class="sync">
+				<legend>Sync</legend>
+				<div class="actions">
+					<button :disabled="!!busy" @click="sync">Sync {{ status.unsynced || '' }}</button>
+					<p>
+						{{ status.unsynced }} waiting for {{ status.galleryUrl }}
+						<span :class="status.connection.ok ? 'muted' : 'error'">
+							({{ status.connection.ok ? `key "${status.connection.key}"` : status.hasUploadKey ? 'not reachable / key invalid' : 'no upload key' }})
+						</span>
+					</p>
+				</div>
+				<template v-if="syncing">
+					<label>
+						{{ syncing.title }}: {{ syncing.step }}
+						<progress :value="syncing.stepsDone" :max="syncing.steps"></progress>
+					</label>
+					<label>
+						{{ syncing.done }} of {{ syncing.total }} paintings
+						<progress :value="syncing.done + syncing.stepsDone / syncing.steps" :max="syncing.total"></progress>
+					</label>
+				</template>
+				<details :open="!status.connection.ok">
+				<summary>Settings</summary>
+				<form @submit.prevent="saveSettings">
+					<label>
+						Gallery URL
+						<input v-model="settings.galleryUrl" placeholder="https://paintings.commons-hub.at" required />
+					</label>
+					<label>
+						Upload key
+						<input
+							v-model="settings.uploadKey"
+							type="password"
+							:placeholder="status.hasUploadKey ? 'saved — enter to replace' : 'from the website: /admin → Upload keys'"
+						/>
+					</label>
+					<button type="submit">Save settings</button>
+				</form>
+				</details>
+				<p v-if="!status.connection.ok" class="muted">{{ status.connection.error }}</p>
+			</fieldset>
+
 			<fieldset v-if="paintings.length" class="saved" :class="{ compact: iconSize < 7 }" :style="{ '--icon-size': `${iconSize}rem` }">
-				<legend>Captured ({{ paintings.length }})</legend>
-				<label class="icon-size">Icon size <input v-model.number="iconSize" type="range" min="3" max="24" step="1" /></label>
+				<legend>
+					Captured ({{ paintings.length }})
+					<label class="icon-size">Icon size <input v-model.number="iconSize" type="range" min="3" max="24" step="1" /></label>
+				</legend>
 				<button
 					v-for="painting in paintings"
 					:key="painting.id"
@@ -558,7 +676,7 @@ const cm = (value: number) => value.toFixed(1)
 					:style="wallColors(bridge.thumbUrl(painting))"
 					:disabled="!!busy || !painting.original || (!!photo && !editing)"
 					:title="painting.rendering ? 'Being finished' : painting.original ? 'Change this painting' : 'Saved without its photo data: cannot be changed'"
-					@click="openPainting(painting)"
+					@click="showPainting(painting)"
 				>
 					<span v-if="painting.rendering" class="pending muted">{{ painting.rendering.error ? 'Failed' : 'Rendering…' }}</span>
 					<!-- measured per thumb version: a changed painting gets its new color -->
@@ -582,48 +700,16 @@ const cm = (value: number) => value.toFixed(1)
 				</button>
 			</fieldset>
 
-			<!-- sync to the website: below the captured paintings -->
-			<fieldset class="sync">
-				<legend>Sync</legend>
-				<p>
-					{{ status.unsynced }} waiting for {{ status.galleryUrl }}
-					<span :class="status.connection.ok ? 'muted' : 'error'">
-						({{ status.connection.ok ? `key "${status.connection.key}"` : status.hasUploadKey ? 'not reachable / key invalid' : 'no upload key' }})
-					</span>
-				</p>
-				<button :disabled="!!busy" @click="sync">Sync {{ status.unsynced || '' }}</button>
-				<template v-if="syncing">
-					<label>
-						{{ syncing.title }}: {{ syncing.step }}
-						<progress :value="syncing.stepsDone" :max="syncing.steps"></progress>
-					</label>
-					<label>
-						{{ syncing.done }} of {{ syncing.total }} paintings
-						<progress :value="syncing.done + syncing.stepsDone / syncing.steps" :max="syncing.total"></progress>
-					</label>
-				</template>
-				<form @submit.prevent="saveSettings">
-					<label>
-						Gallery URL
-						<input v-model="settings.galleryUrl" placeholder="https://paintings.commons-hub.at" required />
-					</label>
-					<label>
-						Upload key
-						<input
-							v-model="settings.uploadKey"
-							type="password"
-							:placeholder="status.hasUploadKey ? 'saved — enter to replace' : 'from the website: /admin → Upload keys'"
-						/>
-					</label>
-					<button type="submit">Save settings</button>
-				</form>
-				<p v-if="!status.connection.ok" class="muted">{{ status.connection.error }}</p>
-			</fieldset>
 		</template>
 	</main>
 </template>
 
 <style>
+/* the capture tool uses the whole width */
+#app:has(> #capture) {
+	max-width: none;
+}
+
 #capture {
 	display: flex;
 	flex-direction: column;
@@ -650,32 +736,30 @@ const cm = (value: number) => value.toFixed(1)
 		}
 	}
 
+	/* a photo, over the page */
 	& .editor {
+		position: fixed;
+		inset: 0;
+		z-index: 1;
+		overflow: auto;
+		overscroll-behavior: contain;
 		display: flex;
 		flex-wrap: wrap;
 		align-items: flex-start;
 		gap: var(--gap);
+		padding: var(--gap);
+		background: var(--bg);
+		color: var(--fg);
+
+		& > .notes {
+			flex-basis: 100%;
+		}
 
 		& form {
 			flex: 1 1 18rem;
 			display: flex;
 			flex-direction: column;
 			gap: var(--gap);
-		}
-
-		&.overlay {
-			position: fixed;
-			inset: 0;
-			z-index: 1;
-			overflow: auto;
-			overscroll-behavior: contain;
-			padding: var(--gap);
-			background: var(--bg);
-			color: var(--fg);
-
-			& > .notes {
-				flex-basis: 100%;
-			}
 		}
 	}
 
@@ -769,6 +853,10 @@ const cm = (value: number) => value.toFixed(1)
 	& .sync {
 		align-items: flex-start;
 
+		& .actions {
+			align-items: center;
+		}
+
 		& progress {
 			display: block;
 			width: 20rem;
@@ -794,12 +882,17 @@ const cm = (value: number) => value.toFixed(1)
 		/* the fieldset's own gap: none, the walls meet */
 		gap: 0;
 
-		& .icon-size {
-			grid-column: 1 / -1;
+		& legend {
 			display: flex;
 			align-items: center;
+			gap: calc(2 * var(--gap));
+		}
+
+		& .icon-size {
+			flex-direction: row;
+			align-items: center;
 			gap: var(--gap);
-			margin-bottom: var(--gap);
+			font-weight: normal;
 		}
 
 		&.compact .caption {
