@@ -3,7 +3,7 @@ import { computed, ref } from 'vue'
 import { authed } from '@/auth'
 import { imageUrl } from '@/api'
 import { sizeLabel, type AdminPainting, type PaintingStatus } from '../../../shared/types'
-import { act, changed, eur, namedStacks, paintings, priceOf, statuses } from './state'
+import { act, changed, eur, materials, namedStacks, paintings, priceOf, statuses, thumbSize } from './state'
 
 const rename = (painting: AdminPainting, title: string) =>
 	act(() => authed(`/api/rate/paintings/${painting.id}/title`, { method: 'PUT', body: JSON.stringify({ title }) }))
@@ -14,13 +14,16 @@ const setRemoved = (painting: AdminPainting, out: boolean) =>
 const setStatus = (painting: AdminPainting, status: PaintingStatus) =>
 	act(() => authed(`/api/admin/paintings/${painting.id}`, { method: 'PATCH', body: JSON.stringify({ status }) }))
 
+const setMaterial = (painting: AdminPainting, material: string) =>
+	act(() => authed(`/api/admin/paintings/${painting.id}`, { method: 'PATCH', body: JSON.stringify({ material }) }))
+
 // filters (null = all); deleted paintings only show up on request
 const stackFilter = ref<string | null>(null)
 const numberFilter = ref('')
 const statusFilter = ref<PaintingStatus | null>(null)
 const placeFilter = ref<'in stack' | 'removed' | null>(null)
 const showDeleted = ref(false)
-// the stacks in the list ('' = paintings without one); the admin list is sorted by stack and #
+// the stacks in the list ('' = paintings without one); the admin list is sorted by stack and its order
 const stacks = computed(() => [...new Set(paintings.value.map((p) => p.stack ?? ''))])
 const visible = computed(() =>
 	paintings.value.filter(
@@ -54,6 +57,13 @@ const setSelectedStatus = (status: PaintingStatus) =>
 	act(async () => {
 		await authed('/api/admin/paintings', { method: 'PATCH', body: JSON.stringify({ ids: picked.value, status }) })
 		selected.value = new Set()
+	})
+const materialTo = ref('')
+const setSelectedMaterial = () =>
+	act(async () => {
+		await authed('/api/admin/paintings', { method: 'PATCH', body: JSON.stringify({ ids: picked.value, material: materialTo.value }) })
+		selected.value = new Set()
+		materialTo.value = ''
 	})
 const setSelectedDeleted = (deleted: boolean) =>
 	act(async () => {
@@ -112,40 +122,56 @@ const moveSelected = () =>
 				<input v-model="showDeleted" type="checkbox" class="pick" />
 				Show deleted
 			</label>
+			<label>Image size <input v-model.number="thumbSize" type="range" min="2" max="24" step="1" /></label>
 		</div>
-		<div v-if="picked.length" class="actions bulk">
-			<label>
-				Status of {{ picked.length }} selected
-				<select value="" @change="setSelectedStatus(($event.target as HTMLSelectElement).value as PaintingStatus)">
-					<option value="" disabled>set to…</option>
-					<option v-for="{ name: status } in statuses" :key="status">{{ status }}</option>
-				</select>
-			</label>
-			<button v-if="pickedInStack.length" @click="setSelectedTakenOut(true)">Remove from stack</button>
-			<template v-if="pickedRemoved.length">
-				<button @click="setSelectedTakenOut(false)">Put back where it was</button>
-				<button @click="setSelectedTakenOut(false, true)">Put back on top</button>
-			</template>
-			<template v-if="pickedActive.length">
-				<label>
-					Move to stack
-					<input v-model.trim="moveTo" list="stack-names" placeholder="name" />
-					<datalist id="stack-names">
-						<option v-for="name in namedStacks" :key="name" :value="name"></option>
-					</datalist>
-				</label>
-				<button :disabled="!moveTo" @click="moveSelected">Move</button>
-				<button @click="setSelectedDeleted(true)">Delete</button>
-			</template>
-			<button v-if="pickedDeleted.length" @click="setSelectedDeleted(false)">Restore</button>
-			<button @click="selected = new Set()">Clear selection</button>
-		</div>
+		<datalist id="material-names">
+			<option v-for="name in materials" :key="name" :value="name"></option>
+		</datalist>
 		<table>
 			<thead>
+				<!-- the actions on the selection: in the header, so they stay visible while scrolling -->
+				<tr v-if="picked.length">
+					<th colspan="12">
+						<div class="actions bulk">
+							<label>
+								Status of {{ picked.length }} selected
+								<select value="" @change="setSelectedStatus(($event.target as HTMLSelectElement).value as PaintingStatus)">
+									<option value="" disabled>set to…</option>
+									<option v-for="{ name: status } in statuses" :key="status">{{ status }}</option>
+								</select>
+							</label>
+							<template v-if="pickedActive.length">
+								<label>
+									Material
+									<input v-model.trim="materialTo" list="material-names" placeholder="material" @keydown.enter="setSelectedMaterial" />
+								</label>
+								<button @click="setSelectedMaterial">Set material</button>
+							</template>
+							<button v-if="pickedInStack.length" @click="setSelectedTakenOut(true)">Remove from stack</button>
+							<template v-if="pickedRemoved.length">
+								<button @click="setSelectedTakenOut(false)">Put back where it was</button>
+								<button @click="setSelectedTakenOut(false, true)">Put back on top</button>
+							</template>
+							<template v-if="pickedActive.length">
+								<label>
+									Move to stack
+									<input v-model.trim="moveTo" list="stack-names" placeholder="name" />
+									<datalist id="stack-names">
+										<option v-for="name in namedStacks" :key="name" :value="name"></option>
+									</datalist>
+								</label>
+								<button :disabled="!moveTo" @click="moveSelected">Move</button>
+								<button @click="setSelectedDeleted(true)">Delete</button>
+							</template>
+							<button v-if="pickedDeleted.length" @click="setSelectedDeleted(false)">Restore</button>
+							<button @click="selected = new Set()">Clear selection</button>
+						</div>
+					</th>
+				</tr>
 				<!-- a line of its own, so the checkbox column below can stay narrow; starts right above its arrow -->
 				<tr>
 					<th colspan="3"></th>
-					<th colspan="8" title="Physically taken out of its stack. Unticking puts it back where it was. Separate from the status.">Removed from physical stack</th>
+					<th colspan="9" title="Physically taken out of its stack. Unticking puts it back where it was. Separate from the status.">Removed from physical stack</th>
 				</tr>
 				<tr>
 					<th></th>
@@ -157,6 +183,7 @@ const moveSelected = () =>
 					<th>Index</th>
 					<th>Name</th>
 					<th>Size (cm)</th>
+					<th>Material</th>
 					<th>Rating</th>
 					<th>Price{{ changed ? ' (preview)' : '' }}</th>
 					<th>Status</th>
@@ -191,7 +218,16 @@ const moveSelected = () =>
 							@keydown.enter="($event.target as HTMLInputElement).blur()"
 						/>
 					</td>
-					<td>{{ sizeLabel(painting) }}</td>
+					<td>{{ sizeLabel({ ...painting, material: null }) }}</td>
+					<td>
+						<input
+							:value="painting.material ?? ''"
+							list="material-names"
+							placeholder="–"
+							@change="setMaterial(painting, ($event.target as HTMLInputElement).value)"
+							@keydown.enter="($event.target as HTMLInputElement).blur()"
+						/>
+					</td>
 					<td>
 						{{ painting.rating?.toFixed(1) ?? '–' }}
 						<span class="muted">({{ painting.ratings }})</span>

@@ -39,8 +39,16 @@ export type User = { name: string; role: Role }
 
 // public: with computed price (rating itself stays private)
 export type PublicPainting = Painting & { price: number | null }
-// admin list: with averaged aesthetic rating and price, and where to look in the physical stack (null: not in it)
-export type AdminPainting = PublicPainting & { rating: number | null; ratings: number; deleted_at: number | null; taken_out_at: number | null; stack_index: number | null }
+// admin list: with averaged aesthetic rating and price, its place in the stack's order (position: lower = further down, only
+// sorts) and where to look in the physical stack (stack_index, null: not in it)
+export type AdminPainting = PublicPainting & {
+	rating: number | null
+	ratings: number
+	deleted_at: number | null
+	taken_out_at: number | null
+	position: number | null
+	stack_index: number | null
+}
 // rating list: with the current user's score
 export type RatePainting = Painting & { my_score: number | null }
 

@@ -10,7 +10,7 @@ import PaintingsTab from './admin/PaintingsTab.vue'
 import PriceTab from './admin/PriceTab.vue'
 import StacksTab from './admin/StacksTab.vue'
 import StatusesTab from './admin/StatusesTab.vue'
-import { error, load } from './admin/state'
+import { error, load, thumbSize } from './admin/state'
 
 const tabs = {
 	stacks: { label: 'Stacks', component: StacksTab },
@@ -42,7 +42,7 @@ onBeforeUnmount(() => clearInterval(live))
 </script>
 
 <template>
-	<main id="admin">
+	<main id="admin" :style="{ '--thumb': `${thumbSize}rem` }">
 		<h1>Admin</h1>
 		<LoginGate :roles="['admin']">
 			<nav class="tabs">
@@ -116,8 +116,8 @@ onBeforeUnmount(() => clearInterval(live))
 
 		& img {
 			display: block;
-			width: 4rem;
-			height: 4rem;
+			width: var(--thumb);
+			height: var(--thumb);
 			object-fit: contain;
 		}
 
@@ -131,6 +131,7 @@ onBeforeUnmount(() => clearInterval(live))
 
 	& .bulk {
 		align-items: flex-end;
+		font-weight: normal;
 	}
 
 	& .check {

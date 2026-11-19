@@ -6,7 +6,7 @@ import { requireRole, sha256, type Env } from '../auth'
 import { changePaintings } from '../log'
 import { getPriceFormula, getPriceFunction, putSetting } from '../settings'
 import { connectStripe, disconnectStripe, stripeStatus } from '../stripe'
-import { cleanStackName, nextNumberSql, stackIndexSql } from '../stacks'
+import { cleanStackName, nextNumberSql, stackIndexSql, topPositionSql } from '../stacks'
 import { cleanStatusName, listStatuses, statusExists } from '../statuses'
 
 const admin = new Hono<Env>()
@@ -16,7 +16,7 @@ admin.get('/paintings', async (c) => {
 	const { results } = await c.env.DB.prepare(
 		`SELECT p.*, ${stackIndexSql}, AVG(r.score) AS rating, COUNT(r.score) AS ratings
 		 FROM paintings p LEFT JOIN ratings r ON r.painting_id = p.id
-		 GROUP BY p.id ORDER BY p.stack, p.number, p.created_at`,
+		 GROUP BY p.id ORDER BY p.stack, p.position, p.created_at`,
 	).all<AdminPainting>()
 	const price = await getPriceFunction(c.env.DB)
 	return c.json(results.map((p) => ({ ...p, price: price(p.width_cm, p.height_cm, p.rating) })))
@@ -57,12 +57,21 @@ admin.put('/pricing', async (c) => {
 	return c.json({ ok: true })
 })
 
-// status of many paintings at once (selection on /admin)
+const cleanMaterial = (input: unknown) => (typeof input === 'string' ? input.trim().slice(0, 100) || null : null)
+
+// status or material of many paintings at once (selection on /admin)
 admin.patch('/paintings', async (c) => {
-	const { ids, status } = await c.req.json<{ ids: string[]; status: Painting['status'] }>()
-	if (!(await statusExists(c.env.DB, status))) return c.json({ error: 'invalid status' }, 400)
+	const body = await c.req.json<{ ids: string[]; status?: Painting['status']; material?: string }>()
+	const { ids } = body
 	if (!Array.isArray(ids) || !ids.length) return c.json({ error: 'no paintings selected' }, 400)
-	await changePaintings(c.env.DB, c.get('user').name, ...ids.map((id) => c.env.DB.prepare(`UPDATE paintings SET status = ? WHERE id = ?`).bind(status, id)))
+	let change: [string, string | null]
+	if ('status' in body) {
+		if (!(await statusExists(c.env.DB, body.status))) return c.json({ error: 'invalid status' }, 400)
+		change = ['status', body.status!]
+	} else if ('material' in body) change = ['material', cleanMaterial(body.material)]
+	else return c.json({ error: 'nothing to update' }, 400)
+	const [field, value] = change
+	await changePaintings(c.env.DB, c.get('user').name, ...ids.map((id) => c.env.DB.prepare(`UPDATE paintings SET ${field} = ? WHERE id = ?`).bind(value, id)))
 	return c.json({ ok: true })
 })
 
@@ -81,7 +90,8 @@ admin.put('/paintings/deleted', async (c) => {
 	return c.json({ ok: true })
 })
 
-// taken out of / put back into the physical stack: where it was (same #), or on top (next #, one by one in the given order).
+// taken out of / put back into the physical stack: where it was (same position), or on top (one by one in the given order).
+// Either way it keeps its #.
 // Separate from the status: a sold painting stays in the stack, and has to be found there, until someone gets it.
 admin.put('/paintings/taken-out', async (c) => {
 	const { ids, out, onTop } = await c.req.json<{ ids: string[]; out: boolean; onTop?: boolean }>()
@@ -89,7 +99,7 @@ admin.put('/paintings/taken-out', async (c) => {
 	const change = out
 		? `taken_out_at = unixepoch()`
 		: onTop
-			? `taken_out_at = NULL, number = (SELECT COALESCE(MAX(q.number), -1) + 1 FROM paintings q WHERE q.stack = paintings.stack)`
+			? `taken_out_at = NULL, position = (SELECT COALESCE(MAX(q.position), -1) + 1 FROM paintings q WHERE q.stack = paintings.stack)`
 			: `taken_out_at = NULL`
 	// only paintings actually changing sides: one already in its stack keeps its place
 	const from = out ? 'taken_out_at IS NULL' : 'taken_out_at IS NOT NULL'
@@ -97,7 +107,7 @@ admin.put('/paintings/taken-out', async (c) => {
 	return c.json({ ok: true })
 })
 
-// to the top of another stack, existing or new: each gets its next #. Already there: stays where it is
+// to the top of another stack, existing or new: each gets its next # and goes on top. Already there: stays where it is
 admin.put('/paintings/stack', async (c) => {
 	const { ids, stack: input } = await c.req.json<{ ids: string[]; stack: string }>()
 	const stack = cleanStackName(input)
@@ -106,15 +116,16 @@ admin.put('/paintings/stack', async (c) => {
 	await changePaintings(
 		c.env.DB,
 		c.get('user').name,
-		...ids.map((id) => c.env.DB.prepare(`UPDATE paintings SET stack = ?, number = ${nextNumberSql} WHERE id = ? AND stack IS NOT ?`).bind(stack, stack, id, stack)),
+		...ids.map((id) => c.env.DB.prepare(`UPDATE paintings SET stack = ?, number = ${nextNumberSql}, position = ${topPositionSql} WHERE id = ? AND stack IS NOT ?`).bind(stack, stack, stack, id, stack)),
 	)
 	return c.json({ ok: true })
 })
 
 admin.patch('/paintings/:id', async (c) => {
-	const body = await c.req.json<Partial<Pick<Painting, 'title' | 'width_cm' | 'height_cm' | 'status'>>>()
+	const body = await c.req.json<Partial<Pick<Painting, 'title' | 'width_cm' | 'height_cm' | 'status' | 'material'>>>()
 	if ('status' in body && !(await statusExists(c.env.DB, body.status))) return c.json({ error: 'invalid status' }, 400)
-	const fields = (['title', 'width_cm', 'height_cm', 'status'] as const).filter((f) => f in body)
+	if ('material' in body) body.material = cleanMaterial(body.material)
+	const fields = (['title', 'width_cm', 'height_cm', 'status', 'material'] as const).filter((f) => f in body)
 	if (!fields.length) return c.json({ error: 'nothing to update' }, 400)
 	const [{ meta }] = (await changePaintings(
 		c.env.DB,
@@ -144,40 +155,68 @@ admin.put('/stacks/rename', async (c) => {
 	return meta.changes ? c.json({ ok: true }) : c.notFound()
 })
 
-// `upper` laid on top of `lower`: its numbers continue above the lower ones, gaps and taken-out and deleted paintings included
+// `upper` laid on top of `lower`: its numbers and order continue above the lower ones, gaps and taken-out and deleted
+// paintings included
 admin.post('/stacks/merge', async (c) => {
 	const body = await c.req.json<{ lower: string; upper: string; name: string }>()
 	const name = cleanStackName(body.name)
 	if (!name) return c.json({ error: 'invalid name' }, 400)
 	if (body.lower === body.upper) return c.json({ error: 'pick two different stacks' }, 400)
 	if (name !== body.lower && name !== body.upper && (await stackExists(c.env.DB, name))) return c.json({ error: nameTaken(name) }, 400)
-	const { top } = (await c.env.DB.prepare(`SELECT MAX(number) AS top FROM paintings WHERE stack = ?`).bind(body.lower).first<{ top: number | null }>())!
+	const { top, topPosition } = (await c.env.DB.prepare(`SELECT MAX(number) AS top, MAX(position) AS topPosition FROM paintings WHERE stack = ?`)
+		.bind(body.lower)
+		.first<{ top: number | null; topPosition: number | null }>())!
 	if (top === null || !(await stackExists(c.env.DB, body.upper))) return c.notFound()
+	const { bottom } = (await c.env.DB.prepare(`SELECT MIN(position) AS bottom FROM paintings WHERE stack = ?`).bind(body.upper).first<{ bottom: number }>())!
 	await changePaintings(
 		c.env.DB,
 		c.get('user').name,
+		c.env.DB.prepare(`UPDATE paintings SET position = position + ? WHERE stack = ?`).bind((topPosition ?? -1) + 1 - bottom, body.upper),
 		...renumber(c.env.DB, body.upper, '', [], top + 1, name),
 		c.env.DB.prepare(`UPDATE paintings SET stack = ? WHERE stack = ?`).bind(name, body.lower),
 	)
 	return c.json({ ok: true })
 })
 
-// `at` and everything above become `upper`, numbered from 0; the rest becomes `lower` and keeps its numbers
+// the painting # `at` and everything above it (in the stack's order) become `upper`, numbered from 0; the rest becomes
+// `lower` and keeps its numbers. Taken-out and deleted paintings go by their position too
 admin.post('/stacks/split', async (c) => {
 	const body = await c.req.json<{ stack: string; at: number; lower: string; upper: string }>()
 	const [lower, upper] = [cleanStackName(body.lower), cleanStackName(body.upper)]
 	if (!lower || !upper || !Number.isInteger(body.at)) return c.json({ error: 'invalid names or position' }, 400)
 	if (lower === upper) return c.json({ error: 'the two stacks need different names' }, 400)
 	for (const name of [lower, upper]) if (name !== body.stack && (await stackExists(c.env.DB, name))) return c.json({ error: nameTaken(name) }, 400)
-	const below = await c.env.DB.prepare(`SELECT 1 FROM paintings WHERE stack = ? AND number < ?`).bind(body.stack, body.at).first()
-	const start = await c.env.DB.prepare(`SELECT MIN(number) AS start FROM paintings WHERE stack = ? AND number >= ?`).bind(body.stack, body.at).first<{ start: number | null }>()
-	if (!below || start?.start === null || start?.start === undefined) return c.json({ error: 'both parts need a painting' }, 400)
+	const at = await c.env.DB.prepare(`SELECT position FROM paintings WHERE stack = ? AND number = ? ORDER BY deleted_at IS NOT NULL LIMIT 1`)
+		.bind(body.stack, body.at)
+		.first<{ position: number }>()
+	if (!at) return c.json({ error: `there is no #${body.at} in "${body.stack}"` }, 400)
+	const below = await c.env.DB.prepare(`SELECT 1 FROM paintings WHERE stack = ? AND position < ?`).bind(body.stack, at.position).first()
+	const { start } = (await c.env.DB.prepare(`SELECT MIN(number) AS start FROM paintings WHERE stack = ? AND position >= ?`).bind(body.stack, at.position).first<{ start: number }>())!
+	if (!below) return c.json({ error: 'both parts need a painting' }, 400)
 	await changePaintings(
 		c.env.DB,
 		c.get('user').name,
-		c.env.DB.prepare(`UPDATE paintings SET stack = ? WHERE stack = ? AND number < ?`).bind(lower, body.stack, body.at),
-		...renumber(c.env.DB, body.stack, 'AND number >= ?', [body.at], -start.start, upper),
+		c.env.DB.prepare(`UPDATE paintings SET stack = ? WHERE stack = ? AND position < ?`).bind(lower, body.stack, at.position),
+		...renumber(c.env.DB, body.stack, 'AND position >= ?', [at.position], -start, upper),
 	)
+	return c.json({ ok: true })
+})
+
+// a new order of the paintings in a stack (taken-out and deleted ones aside), bottom first: they take on the positions they
+// had between them, in that order. The others keep theirs, so a taken-out painting still goes back between the same ones.
+// Refused if the stack has changed meanwhile.
+admin.put('/stacks/order', async (c) => {
+	const { stack, ids } = await c.req.json<{ stack: string; ids: string[] }>()
+	const { results } = await c.env.DB.prepare(`SELECT id, position FROM paintings WHERE stack = ? AND taken_out_at IS NULL AND deleted_at IS NULL ORDER BY position`)
+		.bind(stack)
+		.all<{ id: string; position: number }>()
+	const current = new Map(results.map((p) => [p.id, p.position]))
+	if (!Array.isArray(ids) || ids.length !== current.size || new Set(ids).size !== ids.length || !ids.every((id) => current.has(id)))
+		return c.json({ error: 'the stack has changed meanwhile, please reorder again' }, 409)
+	const changes = ids.flatMap((id, i) =>
+		current.get(id) === results[i]!.position ? [] : [c.env.DB.prepare(`UPDATE paintings SET position = ? WHERE id = ?`).bind(results[i]!.position, id)],
+	)
+	if (changes.length) await changePaintings(c.env.DB, c.get('user').name, ...changes)
 	return c.json({ ok: true })
 })
 

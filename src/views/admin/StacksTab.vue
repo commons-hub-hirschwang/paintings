@@ -1,12 +1,20 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import StackRange from '@/components/StackRange.vue'
+import ReorderStack from './ReorderStack.vue'
 import { authed } from '@/auth'
 import { act, namedStacks, stackPaintings } from './state'
+
+const reordering = ref(false)
+const startReorder = () => {
+	merging.value = splitting.value = renaming.value = null
+	reordering.value = true
+}
 
 const renaming = ref<{ stack: string; name: string } | null>(null)
 const startRename = () => {
 	merging.value = splitting.value = null
+	reordering.value = false
 	renaming.value = { stack: namedStacks.value[0]!, name: '' }
 }
 const renameStack = () =>
@@ -23,6 +31,7 @@ watch([() => merging.value?.lower, () => merging.value?.upper], ([lower, upper])
 const startMerge = () => {
 	const [lower = '', upper = ''] = namedStacks.value
 	splitting.value = renaming.value = null
+	reordering.value = false
 	merging.value = { lower, upper, name: `${lower} + ${upper}` }
 }
 // the stack already chosen on the other side: the two swap places, so they are never the same
@@ -37,19 +46,21 @@ const merge = () =>
 		merging.value = null
 	})
 
-// split: the painting with # `at` and all above become their own stack
+// split: the painting with # `at` and all above it (in the stack's order) become their own stack
 const splitting = ref<{ stack: string; at: number | ''; lower: string; upper: string } | null>(null)
 const splittable = computed(() => namedStacks.value.filter((name) => stackPaintings(name).length > 1))
 const splitOf = (stack: string) => ({ stack, at: stackPaintings(stack)[1]?.number ?? ('' as const), lower: `${stack} A`, upper: `${stack} B` })
 const startSplit = () => {
 	merging.value = renaming.value = null
+	reordering.value = false
 	splitting.value = splitOf(splittable.value[0]!)
 }
 const chooseSplitStack = (stack: string) => (splitting.value = splitOf(stack))
 const splitParts = computed(() => {
 	const { stack, at } = splitting.value ?? { stack: '', at: '' }
 	const all = stackPaintings(stack)
-	return at === '' ? { lower: all, upper: [] } : { lower: all.filter((p) => p.number! < at), upper: all.filter((p) => p.number! >= at) }
+	const from = all.findIndex((p) => p.number === at)
+	return from < 0 ? { lower: all, upper: [] } : { lower: all.slice(0, from), upper: all.slice(from) }
 })
 const split = () =>
 	act(async () => {
@@ -65,7 +76,10 @@ const split = () =>
 			<button :disabled="namedStacks.length < 2" @click="startMerge">Merge two stacks</button>
 			<button :disabled="!splittable.length" @click="startSplit">Split stacks</button>
 			<button @click="startRename">Rename stack</button>
+			<button @click="startReorder">Reorder</button>
 		</div>
+
+		<ReorderStack v-if="reordering" @close="reordering = false" />
 
 		<div v-if="renaming" class="dialog">
 			<label>

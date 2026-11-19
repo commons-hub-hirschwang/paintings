@@ -10,7 +10,7 @@ onActivated(() => act(async () => (entries.value = await authed<PaintingLogEntry
 const NOBODY = 'unknown'
 const who = (entry: PaintingLogEntry) => entry.actor ?? NOBODY
 const paintingLabel = (entry: PaintingLogEntry) => [entry.stack, entry.number !== null ? `#${entry.number}` : '', entry.title || 'Untitled'].filter(Boolean).join(' ')
-const fieldLabels: Record<string, string> = { title: 'name', width_cm: 'width', height_cm: 'height', number: '#', 'taken out': 'removed' }
+const fieldLabels: Record<string, string> = { title: 'name', width_cm: 'width', height_cm: 'height', number: '#', position: 'order', 'taken out': 'removed' }
 const value = (v: string | number | null) => (v === null || v === '' ? 'empty' : v)
 
 const whoFilter = ref<string | null>(null)

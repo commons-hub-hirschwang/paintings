@@ -4,7 +4,7 @@ import { imageKey, isWebVariant } from '../../shared/image-variants'
 import type { Painting } from '../../shared/types'
 import { requireUploadKey, type Env } from '../auth'
 import { changePaintings } from '../log'
-import { cleanStackName, nextNumberSql } from '../stacks'
+import { cleanStackName, nextNumberSql, topPositionSql } from '../stacks'
 
 const capture = new Hono<Env>()
 capture.use(requireUploadKey)
@@ -35,8 +35,8 @@ capture.post('/uploads', async (c) => {
 		c.env.DB,
 		laptop(c.get('uploadKey')),
 		c.env.DB.prepare(
-			`INSERT INTO paintings (id, title, width_cm, height_cm, stack, number, material) VALUES (?, ?, ?, ?, ?, ${nextNumberSql}, ?) ON CONFLICT (id) DO NOTHING`,
-		).bind(body.id, body.title ?? '', body.width_cm ?? null, body.height_cm ?? null, stack, stack, body.material || null),
+			`INSERT INTO paintings (id, title, width_cm, height_cm, stack, number, position, material) VALUES (?, ?, ?, ?, ?, ${nextNumberSql}, ${topPositionSql}, ?) ON CONFLICT (id) DO NOTHING`,
+		).bind(body.id, body.title ?? '', body.width_cm ?? null, body.height_cm ?? null, stack, stack, stack, body.material || null),
 	)) as [D1Result]
 	return meta.changes ? c.json({ id: body.id }, 201) : c.json({ error: 'this painting was already uploaded' }, 409)
 })
