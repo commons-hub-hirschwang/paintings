@@ -58,6 +58,7 @@ function confirm() {
 				<option v-for="name in namedStacks" :key="name">{{ name }}</option>
 			</select>
 			<span class="muted">bottom first · {{ rows.length }} paintings in the stack</span>
+			<button :disabled="rows.length < 2" @click="ask('invert')">Invert order</button>
 			<label class="check">Image size <input v-model.number="thumbSize" type="range" min="2" max="24" step="1" /></label>
 		</div>
 		<p class="muted">Click the paintings to move in the order they should end up in, then the ◆ where they go.</p>
@@ -97,7 +98,6 @@ function confirm() {
 			</tbody>
 		</table>
 		<div class="actions">
-			<button :disabled="rows.length < 2" @click="ask('invert')">Invert order</button>
 			<button :disabled="!picks.length" @click="picks = []">Clear numbers</button>
 			<button @click="$emit('close')">Close</button>
 		</div>
