@@ -4,6 +4,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch, watchEffect } from 'v
 import { useRoute, useRouter } from 'vue-router'
 import ColorCalibration from './ColorCalibration.vue'
 import CornerEditor from './CornerEditor.vue'
+import LivePreview from './LivePreview.vue'
 import { bridge, type Bow, type BridgeStatus, type Detection, type LocalPainting, type Photo, type SyncProgress } from './bridge'
 import { cornerRadius, measureAmbient, wallColors } from '../src/ambient'
 import { estimateSizeCm, MAX_BOW, reconstruct, turnCorners, type Camera, type Quad } from '../shared/geometry'
@@ -605,6 +606,8 @@ const cm = (value: number) => value.toFixed(1)
 								<button type="button" title="Next painting (Page Down)" :disabled="!!busy || !neighbour(1)" @click="step(1)">›</button>
 							</template>
 							<button type="submit" :disabled="!canSave">{{ editing ? 'Save changes' : 'Save painting' }}</button>
+							<!-- a new photo that didn't come out: a fresh one of the same painting; title, size and stack stay -->
+							<button v-if="!editing && status.cameras.length" type="button" :disabled="!canCapture" @click="capture">Take again</button>
 							<button type="button" :disabled="!!busy" @click="editing ? leave() : closeEditor()">{{ editing ? 'Cancel' : 'Discard photo' }}</button>
 						</div>
 					</div>
@@ -614,6 +617,7 @@ const cm = (value: number) => value.toFixed(1)
 
 			<section v-if="savedAs" class="next" @keydown.esc="stop">
 				<p>Saved to stack {{ savedAs }}</p>
+				<LivePreview v-if="status.cameras.length" />
 				<div>
 					<button type="button" @click="stop">Stop</button>
 					<button ref="nextButton" type="button" :disabled="!canCapture" @click="captureNext">Capture next</button>
@@ -777,8 +781,8 @@ const cm = (value: number) => value.toFixed(1)
 		font-size: 2rem;
 		text-align: center;
 
-		& div {
-			flex: 0 1 60vh;
+		& > div {
+			flex: 0 1 25vh;
 			display: flex;
 			gap: var(--gap);
 		}

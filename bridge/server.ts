@@ -19,7 +19,7 @@ import { isSynced, isWaiting, syncAll, syncProgress } from './sync'
 import { currentProject, knownStackNames, listProjects, openProject, projectPath, setKnownStackNames } from './project'
 import { readOriented } from './warp'
 import { applyGains, calibrateColor, clippedShare, colorProgress, colorFile, correctionFor, DEFAULT_ISO, readColorCalibration, shotFile, takeReference, type Box, type ColorCalibration, type Gains } from './color'
-import { ensureLocked, exclusive, exposureMismatch, forgetCameraState, shoot } from './tether'
+import { ensureLocked, exclusive, exposureMismatch, forgetCameraState, preview, shoot } from './tether'
 import { exposureOf } from './camera'
 import { detectCorners, keepOnly, measureBows, snapCorners, trusted } from './detect'
 
@@ -119,6 +119,12 @@ app.post('/capture', (c) =>
 		return c.json({ ...result, warnings: await shotWarnings(shot, image, color, result.detection) })
 	}),
 )
+
+// the camera's live view, to check the painting is in the frame before capturing. 204: busy, ask again
+app.get('/preview', async (c) => {
+	const frame = await preview()
+	return frame ? c.body(new Uint8Array(frame), 200, { 'Content-Type': 'image/jpeg', 'Cache-Control': 'no-store' }) : c.body(null, 204)
+})
 
 // colour calibration: reference photo → mark the white area → calibrate (see color.ts)
 app.post('/color/reference', async (c) => {

@@ -63,9 +63,11 @@ async function gphoto2(args: string[], timeout = TIMEOUT) {
 
 const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
-// one camera operation at a time
+// one camera operation at a time. A live view frame being fetched is waited for, it takes half a second
 let busy = false
+let previewing: Promise<unknown> | null = null
 export async function exclusive<T>(task: () => Promise<T>) {
+	await previewing?.catch(() => {})
 	if (busy) throw new Error('the camera is busy with another capture')
 	busy = true
 	try {
@@ -125,6 +127,20 @@ export async function shoot(dir: string): Promise<string> {
 	const jpeg = saved.find((file) => /\.jpe?g$/i.test(file))
 	if (!jpeg) throw new Error(saved.length ? 'no JPEG captured — check the camera\'s file format' : 'camera did not take a picture — try again')
 	return jpeg
+}
+
+// a live view frame (about 1024 px wide), without taking a picture; null: the camera is busy with something else
+export async function preview(): Promise<Buffer | null> {
+	if (busy || previewing) return null
+	const frame = run('gphoto2', ['--capture-preview', '--stdout'], { timeout: TIMEOUT, killSignal: 'SIGTERM', encoding: 'buffer', maxBuffer: 16 << 20 })
+	previewing = frame
+	try {
+		return (await frame).stdout
+	} catch (error) {
+		throw new Error(friendly({ ...(error as { killed?: boolean; message: string }), stderr: String((error as { stderr?: Buffer }).stderr ?? '') }))
+	} finally {
+		previewing = null
+	}
 }
 
 // what differs between the photo's EXIF and the locked settings
