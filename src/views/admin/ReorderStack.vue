@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // Reorder a stack without dragging: click the paintings to move, they get 1, 2, 3… (again: the number goes, the later ones
 // move down); click a diamond between two paintings to put them there in that order. Picking all of them asks right away.
-// Taken-out paintings aren't shown: they keep their place (server: PUT /stacks/order).
+// "Invert order" turns the whole stack upside down. Taken-out paintings aren't shown: they keep their place (server: PUT /stacks/order).
 import { computed, nextTick, ref, watch } from 'vue'
 import { authed } from '@/auth'
 import { imageUrl } from '@/api'
@@ -23,10 +23,11 @@ watch(rows, (list) => {
 const togglePick = (id: string) => (picks.value = picks.value.includes(id) ? picks.value.filter((p) => p !== id) : [...picks.value, id])
 const allPicked = computed(() => rows.value.length > 1 && picks.value.length === rows.value.length)
 
-// the gap the picked paintings go to: before row `gap` (rows.length: on top); null: not asking
-const gap = ref<number | null>(null)
+// the gap the picked paintings go to: before row `gap` (rows.length: on top); 'invert': the whole stack upside down;
+// null: not asking
+const gap = ref<number | 'invert' | null>(null)
 const dialog = ref<HTMLDialogElement>()
-async function ask(at: number) {
+async function ask(at: number | 'invert') {
 	gap.value = at
 	await nextTick()
 	dialog.value?.showModal()
@@ -40,7 +41,7 @@ function newOrder(at: number) {
 	return [...rest.slice(0, k), ...picks.value, ...rest.slice(k)]
 }
 function confirm() {
-	const ids = newOrder(gap.value!)
+	const ids = gap.value === 'invert' ? rows.value.map((p) => p.id).reverse() : newOrder(gap.value!)
 	dialog.value?.close()
 	return act(async () => {
 		await authed('/api/admin/stacks/order', { method: 'PUT', body: JSON.stringify({ stack: stack.value, ids }) })
@@ -96,12 +97,14 @@ function confirm() {
 			</tbody>
 		</table>
 		<div class="actions">
+			<button :disabled="rows.length < 2" @click="ask('invert')">Invert order</button>
 			<button :disabled="!picks.length" @click="picks = []">Clear numbers</button>
 			<button @click="$emit('close')">Close</button>
 		</div>
 
 		<dialog ref="dialog" @close="gap = null">
-			<p v-if="allPicked">Put all {{ picks.length }} paintings of "{{ stack }}" in the selected order?</p>
+			<p v-if="gap === 'invert'">Turn all {{ rows.length }} paintings of "{{ stack }}" upside down (the top one goes to the bottom)?</p>
+			<p v-else-if="allPicked">Put all {{ picks.length }} paintings of "{{ stack }}" in the selected order?</p>
 			<p v-else>Move the {{ picks.length }} picked paintings here, in the selected order?</p>
 			<div class="actions">
 				<button @click="confirm">Reorder</button>
