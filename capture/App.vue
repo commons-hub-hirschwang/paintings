@@ -641,7 +641,8 @@ const cm = (value: number) => value.toFixed(1)
 						{{ syncing.title }}: {{ syncing.step }}
 						<progress :value="syncing.stepsDone" :max="syncing.steps"></progress>
 					</label>
-					<label>
+					<!-- no count while turning paintings first (turns asked for on the gallery's /admin) -->
+					<label v-if="syncing.total">
 						{{ syncing.done }} of {{ syncing.total }} paintings
 						<progress :value="syncing.done + syncing.stepsDone / syncing.steps" :max="syncing.total"></progress>
 					</label>

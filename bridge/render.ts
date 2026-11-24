@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import sharp from 'sharp'
-import { rectifiedSize, type Quad } from '../shared/geometry'
+import { rectifiedSize, turnCorners, type Quad } from '../shared/geometry'
 import { archive as archiveSettings, webVariants } from '../shared/image-variants'
 import { cameraOf } from './camera'
 import { lensOf } from './lens'
@@ -119,6 +119,19 @@ export async function paintingSource(id: string) {
 	const photo = await correctedPhoto(painting.original.photo)
 	if (!photo) throw new Error(`photo "${painting.original.photo}" is no longer there`)
 	return { file: painting.original.photo, camera: photo.camera, quad: cornersOf(painting.original) }
+}
+
+// turned by quarter turns (1: clockwise) as asked for on the gallery's /admin: rendered again with the corners turned, like ↻
+// in the capture tool, width and height swapped. Uploaded by the sync
+export async function turnPainting(id: string, turns: number) {
+	const painting = await readPainting(id)
+	if (!painting?.original) throw new Error('saved without its photo data: cannot be turned')
+	const odd = turns % 2 !== 0
+	return changePainting(id, {
+		quad: turnCorners(cornersOf(painting.original), turns) as Quad,
+		widthCm: odd ? painting.heightCm : painting.widthCm,
+		heightCm: odd ? painting.widthCm : painting.heightCm,
+	})
 }
 
 export type PaintingChange = Size & { quad: Quad; stack?: string; material?: string; title?: string }

@@ -1,10 +1,12 @@
 // What the tabs of /admin share: the paintings and statuses, kept up to date, and the price formula being edited (the table previews it).
 import { computed, ref, watch } from 'vue'
-import { authed } from '@/auth'
+import { authed, user } from '@/auth'
 import type { AdminPainting, Status, StripeStatus } from '../../../shared/types'
 import { priceFunction, type PriceFn } from '../../../shared/pricing'
 
 export const paintings = ref<AdminPainting[]>([])
+// authors (not admins) see the paintings only: no stacks, deleting, statuses, price, payments, keys or log
+export const isAdmin = computed(() => user.value?.role === 'admin')
 export const statuses = ref<Status[]>([])
 export const error = ref('')
 
@@ -42,7 +44,7 @@ export const eur = (value: number | null | undefined) => (value ? `${value} €`
 export async function load() {
 	;[paintings.value, pricing.value, statuses.value] = await Promise.all([
 		authed<AdminPainting[]>('/api/admin/paintings'),
-		authed<Pricing>('/api/admin/pricing'),
+		isAdmin.value ? authed<Pricing>('/api/admin/pricing') : pricing.value,
 		authed<Status[]>('/api/admin/statuses'),
 	])
 	if (!changed.value || !formula.value) formula.value = pricing.value.formula

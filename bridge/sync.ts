@@ -1,7 +1,8 @@
 import { readFile } from 'node:fs/promises'
 import { api, getSettings, json } from './api'
 import { publishWebVariants } from './images'
-import { listPaintings, paintingFile, writePainting, type LocalPainting } from './store'
+import { turnPainting } from './render'
+import { listPaintings, paintingFile, readPainting, writePainting, type LocalPainting } from './store'
 
 export const isSynced = (painting: { synced: string[] }) => painting.synced.includes(getSettings().galleryUrl)
 // something for the next sync: a new painting, or new images of an uploaded one
@@ -20,10 +21,30 @@ async function create(p: LocalPainting) {
 	})
 }
 
+// Turns asked for on the gallery's /admin, of the paintings in this project: rendered turned (then waiting for upload) and
+// taken back in the gallery. Paintings of other projects or laptops keep theirs. A failure leaves the turn waiting there
+async function applyTurns(log: (line: string) => void) {
+	const gallery = (await (await api('/paintings')).json()) as { id: string; title: string; turn?: number }[]
+	for (const { id, title, turn } of gallery) {
+		if (!turn) continue
+		const local = await readPainting(id)
+		if (!local || local.rendering) continue
+		syncProgress = { done: 0, total: 0, title: title || 'Untitled', step: 'turning', stepsDone: 0, steps: 1 }
+		try {
+			await turnPainting(id, turn)
+			await api(`/paintings/${id}/turned`, { method: 'PUT', ...json({ turns: turn }) })
+			log(`↻ ${title || 'Untitled'}: turned`)
+		} catch (error) {
+			log(`✗ ${title || 'Untitled'}: not turned: ${(error as Error).message}`)
+		}
+	}
+}
+
 // Upload what is waiting in this project, in capture order: the gallery numbers paintings as they arrive, so that order is
 // the physical one. Stops at the first failure, as anything after it would get the wrong #. Safe to rerun.
 export async function syncAll(log: (line: string) => void = () => {}) {
 	const { galleryUrl } = getSettings()
+	await applyTurns(log)
 	const waiting = (await listPaintings()).filter((p) => isWaiting(p) && !p.rendering).sort((a, b) => a.createdAt - b.createdAt)
 	let synced = 0
 	for (const painting of waiting) {

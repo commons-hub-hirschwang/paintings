@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import LoginGate from '@/components/LoginGate.vue'
 import { user } from '@/auth'
+import { canName } from '../../shared/types'
 import KeysTab from './admin/KeysTab.vue'
 import LogsTab from './admin/LogsTab.vue'
 import OrdersTab from './admin/OrdersTab.vue'
@@ -10,32 +11,35 @@ import PaintingsTab from './admin/PaintingsTab.vue'
 import PriceTab from './admin/PriceTab.vue'
 import StacksTab from './admin/StacksTab.vue'
 import StatusesTab from './admin/StatusesTab.vue'
-import { error, load, thumbSize } from './admin/state'
+import UsersTab from './admin/UsersTab.vue'
+import { error, isAdmin, load, thumbSize } from './admin/state'
 
-const tabs = {
+const allTabs = {
 	stacks: { label: 'Stacks', component: StacksTab },
 	paintings: { label: 'Paintings', component: PaintingsTab },
 	statuses: { label: 'Statuses', component: StatusesTab },
 	price: { label: 'Price & payments', component: PriceTab },
 	orders: { label: 'Orders', component: OrdersTab },
+	users: { label: 'Users', component: UsersTab },
 	keys: { label: 'Keys', component: KeysTab },
 	logs: { label: 'Logs', component: LogsTab },
 }
-type Tab = keyof typeof tabs
+type Tab = keyof typeof allTabs
 
 // in the URL, so a reload stays on the tab
 const route = useRoute()
 const router = useRouter()
-const tab = computed<Tab>(() => (route.query.tab as string) in tabs ? (route.query.tab as Tab) : 'paintings')
+// authors: the paintings only (naming, size, material, status, turn)
+const tab = computed<Tab>(() => (isAdmin.value && (route.query.tab as string) in allTabs ? (route.query.tab as Tab) : 'paintings'))
 const openTab = (name: string) => router.replace({ query: { tab: name } })
 
-watch(user, (u) => u?.role === 'admin' && load().catch((e) => (error.value = e.message)), { immediate: true })
+watch(user, (u) => canName(u?.role) && load().catch((e) => (error.value = e.message)), { immediate: true })
 
 // live view: paintings arriving from a capture sync (or changed elsewhere) show up without reloading;
 // paused while typing in a name, as the update would overwrite the input
 const LIVE_INTERVAL = 10_000
 const live = setInterval(() => {
-	if (user.value?.role === 'admin' && document.visibilityState === 'visible' && !document.querySelector('#admin input:not(.pick):focus'))
+	if (canName(user.value?.role) && document.visibilityState === 'visible' && !document.querySelector('#admin input:not(.pick):focus'))
 		load().catch(() => {})
 }, LIVE_INTERVAL)
 onBeforeUnmount(() => clearInterval(live))
@@ -44,14 +48,14 @@ onBeforeUnmount(() => clearInterval(live))
 <template>
 	<main id="admin" :style="{ '--thumb': `${thumbSize}rem` }">
 		<h1>Admin</h1>
-		<LoginGate :roles="['admin']">
-			<nav class="tabs">
-				<button v-for="(t, name) in tabs" :key="name" :aria-current="tab === name ? 'page' : undefined" @click="openTab(name)">{{ t.label }}</button>
+		<LoginGate :roles="['admin', 'author']">
+			<nav v-if="isAdmin" class="tabs">
+				<button v-for="(t, name) in allTabs" :key="name" :aria-current="tab === name ? 'page' : undefined" @click="openTab(name)">{{ t.label }}</button>
 			</nav>
 			<p v-if="error" class="error">{{ error }}</p>
 			<!-- kept alive: filters, a selection or a half-filled form survive switching tabs -->
 			<KeepAlive>
-				<component :is="tabs[tab].component" />
+				<component :is="allTabs[tab].component" />
 			</KeepAlive>
 		</LoginGate>
 	</main>
@@ -126,6 +130,11 @@ onBeforeUnmount(() => clearInterval(live))
 			width: 1.6rem;
 			height: 1.6rem;
 			cursor: pointer;
+		}
+
+		/* ↺ above ↻ */
+		& .turn button {
+			display: block;
 		}
 	}
 

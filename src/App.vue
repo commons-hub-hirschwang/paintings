@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { RouterLink, RouterView, useRoute } from 'vue-router'
 import { loadUser, logout, user } from './auth'
 import { backToGallery } from './router'
+import { canName } from '../shared/types'
 
 loadUser()
 const route = useRoute()
@@ -11,8 +12,8 @@ const route = useRoute()
 const pages = computed(() => {
 	if (!user.value) return []
 	const all = [
-		{ to: '/', label: 'gallery', show: route.name === 'admin' || route.name === 'rate' },
-		{ to: '/admin', label: 'admin', show: user.value.role === 'admin' && route.name !== 'admin' },
+		{ to: '/', label: 'gallery', show: route.name !== 'gallery' && route.name !== 'painting' },
+		{ to: '/admin', label: 'admin', show: canName(user.value.role) && route.name !== 'admin' },
 		{ to: '/rate', label: 'rate', show: route.name !== 'rate' },
 	]
 	return all.filter((page) => page.show)
@@ -34,7 +35,7 @@ const pages = computed(() => {
 		</nav>
 		<div id="login-info" class="muted">
 			<template v-if="user">
-				<span class="name">{{ user.name }}</span>
+				<RouterLink to="/password" class="name" title="change password">{{ user.name }}</RouterLink>
 				<a href="#" @click.prevent="logout">log out</a>
 			</template>
 			<!-- login form on /rate: every role can open it -->

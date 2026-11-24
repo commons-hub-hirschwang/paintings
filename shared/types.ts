@@ -32,14 +32,14 @@ export const sizeLabel = (p: Pick<Painting, 'width_cm' | 'height_cm' | 'material
 export const stackLabel = (p: Pick<Painting, 'stack' | 'number'>) =>
 	p.stack !== null && p.number !== null ? `${p.stack} #${p.number}` : ''
 
-// rater: rates; author: rates and names paintings; admin: everything
+// rater: rates; author: rates and manages paintings on /admin (name, size, material, status, turn); admin: everything
 export type Role = 'admin' | 'author' | 'rater'
 export const canName = (role: Role | undefined) => role === 'admin' || role === 'author'
 export type User = { name: string; role: Role }
 
 // public: with computed price (rating itself stays private)
 export type PublicPainting = Painting & { price: number | null }
-// admin list: with averaged aesthetic rating and price, its place in the stack's order (position: lower = further down, only
+// admin list (authors: their own rating instead of the average, ratings 0 or 1): with averaged aesthetic rating and price, its place in the stack's order (position: lower = further down, only
 // sorts) and where to look in the physical stack (stack_index, null: not in it)
 export type AdminPainting = PublicPainting & {
 	rating: number | null
@@ -48,9 +48,16 @@ export type AdminPainting = PublicPainting & {
 	taken_out_at: number | null
 	position: number | null
 	stack_index: number | null
+	// quarter turns clockwise asked for on /admin, not yet rendered by the capture laptop (0: none)
+	turn: number
 }
 // rating list: with the current user's score
 export type RatePainting = Painting & { my_score: number | null }
+
+// a website user on /admin → Users; legacy: still in the USERS secret, moves to the table at the next login
+export type UserEntry = { name: string; role: Role; must_change: boolean; legacy: boolean; created_at: number | null }
+// what admins can set on /admin; admin rights only via the pnpm user:* scripts
+export const assignableRoles = ['author', 'rater'] as const satisfies Role[]
 
 export type UploadKey = { id: string; name: string; created_by: string; created_at: number; last_used_at: number | null }
 

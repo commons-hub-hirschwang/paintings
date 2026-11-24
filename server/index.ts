@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import { imageKey, isWebVariant } from '../shared/image-variants'
 import type { PublicPainting } from '../shared/types'
-import { currentUser, login, logout, type Env } from './auth'
+import { changePassword, currentUser, login, logout, type Env } from './auth'
 import { getPriceFunction } from './settings'
 import { withPreview } from './preview'
 import type { PriceFn } from '../shared/pricing'
@@ -67,6 +67,12 @@ app.post('/api/auth/login', async (c) => {
 	const { name, password } = await c.req.json<{ name: string; password: string }>()
 	const user = await login(c, name, password)
 	return user ? c.json(user) : c.json({ error: 'wrong name or password' }, 401)
+})
+
+app.post('/api/auth/password', async (c) => {
+	const { name, password, newPassword } = await c.req.json<{ name: string; password: string; newPassword: string }>()
+	const result = await changePassword(c, name, password, newPassword)
+	return typeof result === 'string' ? c.json({ error: result }, 400) : c.json(result)
 })
 
 app.post('/api/auth/logout', (c) => {

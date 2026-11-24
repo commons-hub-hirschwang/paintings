@@ -15,7 +15,7 @@ const laptop = (key: string) => `upload key "${key}"`
 capture.get('/me', (c) => c.json({ key: c.get('uploadKey') }))
 
 capture.get('/paintings', async (c) => {
-	const { results } = await c.env.DB.prepare(`SELECT id, title, variants_version, color FROM paintings ORDER BY created_at`).all<Painting>()
+	const { results } = await c.env.DB.prepare(`SELECT id, title, variants_version, color, turn FROM paintings ORDER BY created_at`).all<Painting>()
 	return c.json(results)
 })
 
@@ -50,6 +50,15 @@ capture.put('/paintings/:id', async (c) => {
 		laptop(c.get('uploadKey')),
 		c.env.DB.prepare(`UPDATE paintings SET width_cm = ?, height_cm = ? WHERE id = ?`).bind(width_cm, height_cm, c.req.param('id')),
 	)) as [D1Result]
+	return meta.changes ? c.json({ ok: true }) : c.notFound()
+})
+
+// a turn asked for on /admin, now rendered into the images by the laptop: taken back (turned again meanwhile: the rest stays).
+// The size was turned already
+capture.put('/paintings/:id/turned', async (c) => {
+	const { turns } = await c.req.json<{ turns: number }>()
+	if (!Number.isInteger(turns)) return c.json({ error: 'invalid turns' }, 400)
+	const { meta } = await c.env.DB.prepare(`UPDATE paintings SET turn = ((turn - ?) % 4 + 4) % 4 WHERE id = ?`).bind(turns, c.req.param('id')).run()
 	return meta.changes ? c.json({ ok: true }) : c.notFound()
 })
 

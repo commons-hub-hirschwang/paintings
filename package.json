@@ -19,7 +19,12 @@
     "capture": "tsx watch --clear-screen=false bridge/server.ts",
     "video": "tsx scripts/video.ts",
     "corners:eval": "tsx scripts/corners-eval.ts",
-    "corners:sweep": "tsx scripts/corners-sweep.ts"
+    "corners:sweep": "tsx scripts/corners-sweep.ts",
+    "user:add": "tsx scripts/users.ts add",
+    "user:remove": "tsx scripts/users.ts remove",
+    "user:list": "tsx scripts/users.ts list",
+    "user:reset": "tsx scripts/users.ts reset",
+    "user:role": "tsx scripts/users.ts role"
   },
   "dependencies": {
     "exif-reader": "^2.0.3",

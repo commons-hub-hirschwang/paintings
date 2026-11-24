@@ -7,15 +7,26 @@ export async function loadUser() {
 	user.value = await (await fetch('/api/auth/me')).json()
 }
 
-export async function login(name: string, password: string) {
-	const response = await fetch('/api/auth/login', {
+async function post(path: string, data: object) {
+	const response = await fetch(path, {
 		method: 'POST',
 		headers: { 'content-type': 'application/json' },
-		body: JSON.stringify({ name, password }),
+		body: JSON.stringify(data),
 	})
 	const body = await response.json()
 	if (!response.ok) throw new Error(body.error)
+	return body
+}
+
+// 'mustChange': right password, but a new one has to be chosen first (one-time or legacy password): changePassword
+export async function login(name: string, password: string): Promise<'mustChange' | void> {
+	const body = await post('/api/auth/login', { name, password })
+	if (body.mustChange) return 'mustChange'
 	user.value = body
+}
+
+export async function changePassword(name: string, password: string, newPassword: string) {
+	user.value = await post('/api/auth/password', { name, password, newPassword })
 }
 
 export async function logout() {

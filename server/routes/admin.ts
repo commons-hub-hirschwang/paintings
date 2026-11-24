@@ -1,8 +1,8 @@
 import { Hono } from 'hono'
 import { FormulaError } from '../../shared/expr'
 import { defaultPriceFormula, priceExamples, priceFunction } from '../../shared/pricing'
-import { builtInStatuses, type AdminPainting, type Painting, type PaintingLogEntry, type UploadKey } from '../../shared/types'
-import { requireRole, sha256, type Env } from '../auth'
+import { assignableRoles, builtInStatuses, type AdminPainting, type Painting, type PaintingLogEntry, type UploadKey } from '../../shared/types'
+import { listUsers, requireRole, sha256, type Env } from '../auth'
 import { changePaintings } from '../log'
 import { getPriceFormula, getPriceFunction, putSetting } from '../settings'
 import { connectStripe, disconnectStripe, stripeStatus } from '../stripe'
@@ -10,17 +10,83 @@ import { cleanStackName, nextNumberSql, stackIndexSql, topPositionSql } from '..
 import { cleanStatusName, listStatuses, statusExists } from '../statuses'
 
 const admin = new Hono<Env>()
+// ---------- for authors too: naming, size, material, status and turn of paintings ----------
+
+admin.use(requireRole('admin', 'author'))
+
+// authors see their own rating only (the price comes from everyone's), and no deleted paintings
+admin.get('/paintings', async (c) => {
+	const { name, role } = c.get('user')
+	const author = role === 'author'
+	const { results } = await c.env.DB.prepare(
+		`SELECT p.*, ${stackIndexSql}, AVG(r.score) AS rating, COUNT(r.score) AS ratings, MAX(CASE WHEN r.admin = ? THEN r.score END) AS my_score
+		 FROM paintings p LEFT JOIN ratings r ON r.painting_id = p.id
+		 WHERE ? = 0 OR p.deleted_at IS NULL
+		 GROUP BY p.id ORDER BY p.stack, p.position, p.created_at`,
+	)
+		.bind(name, author ? 1 : 0)
+		.all<AdminPainting & { my_score: number | null }>()
+	const price = await getPriceFunction(c.env.DB)
+	return c.json(
+		results.map(({ my_score, ...p }) => ({
+			...p,
+			price: price(p.width_cm, p.height_cm, p.rating),
+			...(author ? { rating: my_score, ratings: my_score === null ? 0 : 1 } : {}),
+		})),
+	)
+})
+
+admin.get('/statuses', async (c) => c.json(await listStatuses(c.env.DB)))
+
+const cleanMaterial = (input: unknown) => (typeof input === 'string' ? input.trim().slice(0, 100) || null : null)
+
+// status or material of many paintings at once (selection on /admin)
+admin.patch('/paintings', async (c) => {
+	const body = await c.req.json<{ ids: string[]; status?: Painting['status']; material?: string }>()
+	const { ids } = body
+	if (!Array.isArray(ids) || !ids.length) return c.json({ error: 'no paintings selected' }, 400)
+	let change: [string, string | null]
+	if ('status' in body) {
+		if (!(await statusExists(c.env.DB, body.status))) return c.json({ error: 'invalid status' }, 400)
+		change = ['status', body.status!]
+	} else if ('material' in body) change = ['material', cleanMaterial(body.material)]
+	else return c.json({ error: 'nothing to update' }, 400)
+	const [field, value] = change
+	await changePaintings(c.env.DB, c.get('user').name, ...ids.map((id) => c.env.DB.prepare(`UPDATE paintings SET ${field} = ? WHERE id = ?`).bind(value, id)))
+	return c.json({ ok: true })
+})
+
+admin.patch('/paintings/:id', async (c) => {
+	const body = await c.req.json<Partial<Pick<Painting, 'title' | 'width_cm' | 'height_cm' | 'status' | 'material'>>>()
+	if ('status' in body && !(await statusExists(c.env.DB, body.status))) return c.json({ error: 'invalid status' }, 400)
+	if ('material' in body) body.material = cleanMaterial(body.material)
+	const fields = (['title', 'width_cm', 'height_cm', 'status', 'material'] as const).filter((f) => f in body)
+	if (!fields.length) return c.json({ error: 'nothing to update' }, 400)
+	const [{ meta }] = (await changePaintings(
+		c.env.DB,
+		c.get('user').name,
+		c.env.DB.prepare(`UPDATE paintings SET ${fields.map((f) => `${f} = ?`).join(', ')} WHERE id = ?`).bind(...fields.map((f) => body[f] ?? null), c.req.param('id')),
+	)) as [D1Result]
+	return meta.changes ? c.json({ ok: true }) : c.notFound()
+})
+
+// turned by quarter turns (1: clockwise), as metadata: the capture laptop with the painting renders it turned on its next
+// sync (capture.ts: /paintings/:id/turned). The size turns along right away
+admin.put('/paintings/:id/turn', async (c) => {
+	const { by } = await c.req.json<{ by: number }>()
+	if (by !== 1 && by !== -1) return c.json({ error: 'turn by 1 or -1' }, 400)
+	const [{ meta }] = (await changePaintings(
+		c.env.DB,
+		c.get('user').name,
+		c.env.DB.prepare(`UPDATE paintings SET turn = (turn + ? + 4) % 4, width_cm = height_cm, height_cm = width_cm WHERE id = ? AND deleted_at IS NULL`).bind(by, c.req.param('id')),
+	)) as [D1Result]
+	return meta.changes ? c.json({ ok: true }) : c.notFound()
+})
+
+// ---------- admins only: everything else (stacks, deleting, statuses, price, payments, keys, log) ----------
+
 admin.use(requireRole('admin'))
 
-admin.get('/paintings', async (c) => {
-	const { results } = await c.env.DB.prepare(
-		`SELECT p.*, ${stackIndexSql}, AVG(r.score) AS rating, COUNT(r.score) AS ratings
-		 FROM paintings p LEFT JOIN ratings r ON r.painting_id = p.id
-		 GROUP BY p.id ORDER BY p.stack, p.position, p.created_at`,
-	).all<AdminPainting>()
-	const price = await getPriceFunction(c.env.DB)
-	return c.json(results.map((p) => ({ ...p, price: price(p.width_cm, p.height_cm, p.rating) })))
-})
 
 admin.get('/pricing', async (c) =>
 	c.json({ formula: await getPriceFormula(c.env.DB), default: defaultPriceFormula, stripe: await stripeStatus(c.env.DB, c.env) }),
@@ -54,24 +120,6 @@ admin.put('/pricing', async (c) => {
 		throw error
 	}
 	await putSetting(c.env.DB, 'price_formula', formula.trim(), c.get('user').name)
-	return c.json({ ok: true })
-})
-
-const cleanMaterial = (input: unknown) => (typeof input === 'string' ? input.trim().slice(0, 100) || null : null)
-
-// status or material of many paintings at once (selection on /admin)
-admin.patch('/paintings', async (c) => {
-	const body = await c.req.json<{ ids: string[]; status?: Painting['status']; material?: string }>()
-	const { ids } = body
-	if (!Array.isArray(ids) || !ids.length) return c.json({ error: 'no paintings selected' }, 400)
-	let change: [string, string | null]
-	if ('status' in body) {
-		if (!(await statusExists(c.env.DB, body.status))) return c.json({ error: 'invalid status' }, 400)
-		change = ['status', body.status!]
-	} else if ('material' in body) change = ['material', cleanMaterial(body.material)]
-	else return c.json({ error: 'nothing to update' }, 400)
-	const [field, value] = change
-	await changePaintings(c.env.DB, c.get('user').name, ...ids.map((id) => c.env.DB.prepare(`UPDATE paintings SET ${field} = ? WHERE id = ?`).bind(value, id)))
 	return c.json({ ok: true })
 })
 
@@ -119,20 +167,6 @@ admin.put('/paintings/stack', async (c) => {
 		...ids.map((id) => c.env.DB.prepare(`UPDATE paintings SET stack = ?, number = ${nextNumberSql}, position = ${topPositionSql} WHERE id = ? AND stack IS NOT ?`).bind(stack, stack, stack, id, stack)),
 	)
 	return c.json({ ok: true })
-})
-
-admin.patch('/paintings/:id', async (c) => {
-	const body = await c.req.json<Partial<Pick<Painting, 'title' | 'width_cm' | 'height_cm' | 'status' | 'material'>>>()
-	if ('status' in body && !(await statusExists(c.env.DB, body.status))) return c.json({ error: 'invalid status' }, 400)
-	if ('material' in body) body.material = cleanMaterial(body.material)
-	const fields = (['title', 'width_cm', 'height_cm', 'status', 'material'] as const).filter((f) => f in body)
-	if (!fields.length) return c.json({ error: 'nothing to update' }, 400)
-	const [{ meta }] = (await changePaintings(
-		c.env.DB,
-		c.get('user').name,
-		c.env.DB.prepare(`UPDATE paintings SET ${fields.map((f) => `${f} = ?`).join(', ')} WHERE id = ?`).bind(...fields.map((f) => body[f] ?? null), c.req.param('id')),
-	)) as [D1Result]
-	return meta.changes ? c.json({ ok: true }) : c.notFound()
 })
 
 const stackExists = async (db: D1Database, name: string) => !!(await db.prepare(`SELECT 1 FROM paintings WHERE stack = ?`).bind(name).first())
@@ -222,8 +256,6 @@ admin.put('/stacks/order', async (c) => {
 
 // ---------- statuses ----------
 
-admin.get('/statuses', async (c) => c.json(await listStatuses(c.env.DB)))
-
 // a new one, listed last
 admin.post('/statuses', async (c) => {
 	const body = await c.req.json<{ name: string; public: boolean }>()
@@ -273,6 +305,19 @@ admin.get('/log', async (c) => {
 		`SELECT l.*, p.title, p.stack, p.number FROM painting_log l LEFT JOIN paintings p ON p.id = l.painting_id ORDER BY l.id DESC LIMIT 2000`,
 	).all<PaintingLogEntry>()
 	return c.json(results)
+})
+
+admin.get('/users', async (c) => c.json(await listUsers(c.env)))
+
+// author ↔ rater only: making someone admin or taking it away goes through `pnpm user:role` (scripts/users.ts)
+admin.put('/users/:name/role', async (c) => {
+	const { role } = await c.req.json<{ role: string }>()
+	if (!(assignableRoles as readonly string[]).includes(role)) return c.json({ error: 'admin rights only via pnpm user:role' }, 400)
+	const user = await c.env.DB.prepare(`SELECT role FROM users WHERE name = ?`).bind(c.req.param('name')).first<{ role: string }>()
+	if (!user) return c.json({ error: 'not in the users table (yet)' }, 404)
+	if (user.role === 'admin') return c.json({ error: 'admin rights only via pnpm user:role' }, 400)
+	await c.env.DB.prepare(`UPDATE users SET role = ? WHERE name = ?`).bind(role, c.req.param('name')).run()
+	return c.json({ ok: true })
 })
 
 admin.get('/keys', async (c) => {

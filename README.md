@@ -80,7 +80,8 @@ One-time setup:
 pnpm wrangler d1 create paintings                # id is in wrangler.jsonc env.commons
 pnpm wrangler r2 bucket create paintings-images  # R2 must be enabled in the dashboard first
 pnpm db:migrate:commons
-pnpm wrangler secret put USERS --env commons     # "name:password[:admin],…" (others: rater)
+# legacy: users in the USERS secret move to the users table when they next log in (and choose a new password)
+pnpm user:add <name> [admin|author|rater]        # prints a one-time password; also user:reset, user:role, user:remove, user:list
 ```
 
 Payments: on `/admin` → Price & payments, paste the Stripe secret key; the webhook is created at Stripe automatically.

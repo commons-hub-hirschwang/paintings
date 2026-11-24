@@ -3,7 +3,7 @@ import { computed, ref } from 'vue'
 import { authed } from '@/auth'
 import { imageUrl } from '@/api'
 import { sizeLabel, type AdminPainting, type PaintingStatus } from '../../../shared/types'
-import { act, changed, eur, materials, namedStacks, paintings, priceOf, statuses, thumbSize } from './state'
+import { act, changed, eur, isAdmin, materials, namedStacks, paintings, priceOf, statuses, thumbSize } from './state'
 
 const rename = (painting: AdminPainting, title: string) =>
 	act(() => authed(`/api/rate/paintings/${painting.id}/title`, { method: 'PUT', body: JSON.stringify({ title }) }))
@@ -16,6 +16,10 @@ const setStatus = (painting: AdminPainting, status: PaintingStatus) =>
 
 const setMaterial = (painting: AdminPainting, material: string) =>
 	act(() => authed(`/api/admin/paintings/${painting.id}`, { method: 'PATCH', body: JSON.stringify({ material }) }))
+
+// quarter turns (1: clockwise); shown turned right away, the images are turned by the capture laptop's next sync
+const turn = (painting: AdminPainting, by: 1 | -1) =>
+	act(() => authed(`/api/admin/paintings/${painting.id}/turn`, { method: 'PUT', body: JSON.stringify({ by }) }))
 
 // filters (null = all); deleted paintings only show up on request
 const stackFilter = ref<string | null>(null)
@@ -61,8 +65,8 @@ const setSelectedStatus = (status: PaintingStatus) =>
 const materialTo = ref('')
 const setSelectedMaterial = () =>
 	act(async () => {
+		// stays selected: often more is set for the same paintings
 		await authed('/api/admin/paintings', { method: 'PATCH', body: JSON.stringify({ ids: picked.value, material: materialTo.value }) })
-		selected.value = new Set()
 		materialTo.value = ''
 	})
 const setSelectedDeleted = (deleted: boolean) =>
@@ -118,7 +122,7 @@ const moveSelected = () =>
 					<option>removed</option>
 				</select>
 			</label>
-			<label class="check">
+			<label v-if="isAdmin" class="check">
 				<input v-model="showDeleted" type="checkbox" class="pick" />
 				Show deleted
 			</label>
@@ -131,7 +135,7 @@ const moveSelected = () =>
 			<thead>
 				<!-- the actions on the selection: in the header, so they stay visible while scrolling -->
 				<tr v-if="picked.length">
-					<th colspan="12">
+					<th colspan="13">
 						<div class="actions bulk">
 							<label>
 								Status of {{ picked.length }} selected
@@ -147,6 +151,7 @@ const moveSelected = () =>
 								</label>
 								<button @click="setSelectedMaterial">Set material</button>
 							</template>
+							<template v-if="isAdmin">
 							<button v-if="pickedInStack.length" @click="setSelectedTakenOut(true)">Remove from stack</button>
 							<template v-if="pickedRemoved.length">
 								<button @click="setSelectedTakenOut(false)">Put back where it was</button>
@@ -164,17 +169,19 @@ const moveSelected = () =>
 								<button @click="setSelectedDeleted(true)">Delete</button>
 							</template>
 							<button v-if="pickedDeleted.length" @click="setSelectedDeleted(false)">Restore</button>
+							</template>
 							<button @click="selected = new Set()">Clear selection</button>
 						</div>
 					</th>
 				</tr>
 				<!-- a line of its own, so the checkbox column below can stay narrow; starts right above its arrow -->
 				<tr>
-					<th colspan="3"></th>
+					<th colspan="4"></th>
 					<th colspan="9" title="Physically taken out of its stack. Unticking puts it back where it was. Separate from the status.">Removed from physical stack</th>
 				</tr>
 				<tr>
 					<th></th>
+					<th class="narrow" title="Turn the painting. The images are turned on the capture laptop's next sync">Turn</th>
 					<th>Stack</th>
 					<th>#</th>
 					<th class="narrow" title="Physically taken out of its stack. Unticking puts it back where it was. Separate from the status.">
@@ -184,7 +191,7 @@ const moveSelected = () =>
 					<th>Name</th>
 					<th>Size (cm)</th>
 					<th>Material</th>
-					<th>Rating</th>
+					<th>{{ isAdmin ? 'Rating' : 'My rating' }}</th>
 					<th>Price{{ changed ? ' (preview)' : '' }}</th>
 					<th>Status</th>
 					<th>
@@ -195,7 +202,18 @@ const moveSelected = () =>
 			<tbody>
 				<tr v-for="painting in visible" :key="painting.id" :class="{ deleted: painting.deleted_at !== null }">
 					<td>
-						<img v-if="painting.variants_version" :src="imageUrl(painting, 'thumb')" :alt="painting.title" loading="lazy" />
+						<img
+							v-if="painting.variants_version"
+							:src="imageUrl(painting, 'thumb')"
+							:alt="painting.title"
+							loading="lazy"
+							:style="painting.turn ? { rotate: `${painting.turn * 90}deg` } : undefined"
+							:title="painting.turn ? 'Turned: the images follow with the capture laptop\'s next sync' : undefined"
+						/>
+					</td>
+					<td class="narrow turn">
+						<button title="Turn left" :disabled="painting.deleted_at !== null" @click="turn(painting, -1)">↺</button>
+						<button title="Turn right" :disabled="painting.deleted_at !== null" @click="turn(painting, 1)">↻</button>
 					</td>
 					<td>{{ painting.stack }}</td>
 					<td>{{ painting.number }}</td>
@@ -205,7 +223,7 @@ const moveSelected = () =>
 							class="pick"
 							title="Physically taken out of its stack. Unticking puts it back where it was. Separate from the status."
 							:checked="painting.taken_out_at !== null"
-							:disabled="painting.deleted_at !== null"
+							:disabled="!isAdmin || painting.deleted_at !== null"
 							@change="setRemoved(painting, ($event.target as HTMLInputElement).checked)"
 						/>
 					</td>
@@ -229,8 +247,8 @@ const moveSelected = () =>
 						/>
 					</td>
 					<td>
-						{{ painting.rating?.toFixed(1) ?? '–' }}
-						<span class="muted">({{ painting.ratings }})</span>
+						{{ isAdmin ? (painting.rating?.toFixed(1) ?? '–') : (painting.rating ?? '–') }}
+						<span v-if="isAdmin" class="muted">({{ painting.ratings }})</span>
 					</td>
 					<td>{{ eur(priceOf(painting)) }}</td>
 					<td>

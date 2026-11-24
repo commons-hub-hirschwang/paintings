@@ -11,6 +11,7 @@ const router = createRouter({
 		{ path: '/p/:id', name: 'painting', component: () => import('../views/PaintingView.vue') },
 		{ path: '/rate', name: 'rate', component: () => import('../views/RateView.vue') },
 		{ path: '/admin', name: 'admin', component: () => import('../views/AdminView.vue') },
+		{ path: '/password', name: 'password', component: () => import('../views/PasswordView.vue') },
 	],
 	scrollBehavior(to, from, savedPosition) {
 		if (savedPosition) return savedPosition
